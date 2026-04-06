@@ -1,0 +1,24 @@
+name: clang-format Check
+
+on:
+  pull_request:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+    paths:
+      - 'src/**'
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+
+      - name: Run clang-format
+        uses: jidicula/clang-format-action@v4.18.0
+        with:
+          clang-format-version: '21'
+          check-path: 'src'
+          # CPU code comes from project https://github.com/rene/MOS650x
+          exclude-regex: 'src/cpu/.*'
