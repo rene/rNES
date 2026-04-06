@@ -1,0 +1,29 @@
+name: Build rNES (posix + SDL)
+
+on:
+  pull_request:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+  push:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
+
+      - name: Build with make
+        run: cd src && make
