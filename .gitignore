@@ -1,0 +1,7 @@
+*.o
+*.swp
+*.dep
+src/docs/dist
+src/roms
+tags
+rNES
