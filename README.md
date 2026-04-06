@@ -1,6 +1,5 @@
-# rNES - Yet another Nintendo Entertainment System emulator
-
 ![rNES logo](/docs/imgs/rNES.png)
+# rNES - Yet another Nintendo Entertainment System emulator
 
 rNES it's yet another NES emulator which has as it main goals:
 
