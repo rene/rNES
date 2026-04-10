@@ -7,21 +7,19 @@ rNES it's yet another NES emulator which has as it main goals:
 - Low memory footprint
 - High portability across platforms
 
-Currently rNES implements mappers 0, 1, 2, 3 and 7, supporting thousands
+Currently rNES implements mappers 0, 1, 2, 3, 4 and 7, supporting thousands
 of NES games.
 
-![Fig. 1: rNES](/docs/imgs/rNES_games.png)
-
-*Fig. 1: rNES*
+![rNES](/docs/imgs/rNES_games.png)
 
 # How to build
 
 Currently only a posix system with lib SDL is supported. On a Debian family system, make sure to install the following packages:
 
-- libsdl2
-- libsdl2-ttf
+- libsdl2-dev
+- libsdl2-ttf-dev
 
-rNES can be built by calling *make*:
+rNES can be built by calling *make* from *src* directory:
 
 ```sh
 cd src
@@ -36,7 +34,7 @@ To run rNES just call:
 
 The following options are supported:
 
-```sh
+```text
 Use: ./rNES [-s <scale_factor>] [-d] [-h] <rom_file>
 
     -s, --scale      Set screen scale factor (default: 2)
@@ -62,7 +60,22 @@ make
 
 The tool is straightforward to use, you can create a new palette or load an existent one (.pal file, no headers, just a sequence of RGB color data for all 64 entries). Just click on the squares to change the color.
 
-![Fig. 2: PalleteEditor](/docs/imgs/PaletteEditor.png)
+![PaletteEditor](/docs/imgs/PaletteEditor.png)
 
-*Fig. 2: PalleteEditor interface.*
+*PaletteEditor interface.*
+
+
+# Developing rNES
+
+Developers are really encouraged to develop and contribute to rNES. For
+detailed information and porting guide, consult the [Developer Documentation](/docs/README.md).
+
+Source code documentation can be generated with Doxygen:
+
+```sh
+cd src
+make docs
+```
+
+The generated documentation will be available in different formats at `src/docs/dist`.
 
