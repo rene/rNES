@@ -38,14 +38,13 @@
 #include <mappers/mapper.h>
 #include <stdlib.h>
 
-/** Bank selector register */
-static uint8_t reg_banksel;
-
-/** Address of the last PRG ROM bank */
-static uint64_t last_bank;
-
-/** CHR RAM */
-static uint8_t *chr_ram;
+/* UxROM custom data */
+struct _m2_mapper {
+	/** Bank selector register */
+	uint8_t reg_banksel;
+	/** Address of the last PRG ROM bank */
+	uint64_t last_bank;
+};
 
 /**
  * Mapper initialization function
@@ -55,16 +54,21 @@ static uint8_t *chr_ram;
  */
 static int m2_mapper_init(struct _mapper_t *m, cartridge_t *c)
 {
-	if (m)
+	struct _m2_mapper *m2;
+
+	if (m) {
 		m->cartridge = c;
+		m->data = calloc(sizeof(struct _m2_mapper), 1);
+		if (m->data == NULL)
+			return -ENOMEM;
 
-	/* Allocates 8 KB of CHR RAM */
-	chr_ram = calloc(sizeof(uint8_t), 0x2000);
-	if (!chr_ram)
-		return -ENOMEM;
+		m2 = (struct _m2_mapper *)m->data;
+	} else {
+		return -EINVAL;
+	}
 
-	last_bank = c->rom->prg_size - 0x4000;
-	reg_banksel = 0;
+	m2->last_bank = c->rom->prg_size - 0x4000;
+	m2->reg_banksel = 0;
 	return 0;
 }
 
@@ -75,7 +79,10 @@ static int m2_mapper_init(struct _mapper_t *m, cartridge_t *c)
  */
 static int m2_mapper_finalize(struct _mapper_t *m)
 {
-	free(chr_ram);
+	struct _m2_mapper *m2 = (struct _m2_mapper *)m->data;
+
+	free(m2);
+	m->data = NULL;
 	return 0;
 }
 
@@ -90,23 +97,24 @@ static int m2_mapper_finalize(struct _mapper_t *m)
 static uint8_t m2_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 								  uint16_t address, uint8_t value)
 {
-	uint64_t idx;
 	cartridge_t *cartridge = m->cartridge;
+	struct _m2_mapper *m2 = (struct _m2_mapper *)m->data;
+	uint64_t idx = 0;
+
+	if (address >= 0x8000 && address <= 0xbfff) {
+		idx = (m2->reg_banksel * 0x4000) + (address & 0x3fff);
+	} else if (address >= 0xc000 && address <= 0xffff) {
+		idx = m2->last_bank + (address & 0x3fff);
+	}
 
 	switch (op) {
 	case CMEM_READ:
-		if (address >= 0x8000 && address <= 0xbfff) {
-			idx = (reg_banksel * 0x4000) + (address & 0x3fff);
-			return cartridge->rom->prg_rom[idx];
-		} else if (address >= 0xc000 && address <= 0xffff) {
-			idx = last_bank + (address & 0x3fff);
-			return cartridge->rom->prg_rom[idx];
-		}
+		return cartridge->rom->prg_rom[idx % cartridge->rom->prg_size];
 		break;
 
 	case CMEM_WRITE:
 		if (address >= 0x8000 && address <= 0xffff) {
-			reg_banksel = (value & 0x0f);
+			m2->reg_banksel = (value & 0x0f);
 			return value;
 		}
 		return value;
@@ -126,14 +134,19 @@ static uint8_t m2_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 static uint8_t m2_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 								  uint16_t address, uint8_t value)
 {
-	if (address < 0x2000) {
-		switch (op) {
-		case CMEM_READ:
-			return chr_ram[address];
-		case CMEM_WRITE:
-			chr_ram[address] = value;
-			return value;
-		}
+	cartridge_t *cartridge = m->cartridge;
+	uint64_t idx;
+
+	idx = (address & 0x1fff);
+
+	switch (op) {
+	case CMEM_READ:
+		return cartridge->rom->chr_rom[idx];
+
+	case CMEM_WRITE:
+		if (cartridge->chr_ram)
+			cartridge->rom->chr_rom[idx] = value;
+		return value;
 	}
 
 	return 0;
