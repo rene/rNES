@@ -206,7 +206,7 @@ static int m1_mapper_init(struct _mapper_t *m, cartridge_t *c)
 		return -EINVAL;
 	}
 
-	/* Allocates 32 KB of PRG RAM */
+	/* Allocates 32 KB of PRG RAM (maximum capacity) */
 	m1->prg_ram = calloc(0x8000, sizeof(uint8_t));
 	if (!m1->prg_ram) {
 		free(m->data);
@@ -258,7 +258,7 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 	case CMEM_WRITE:
 		if (address >= 0x6000 && address <= 0x7fff) {
 			/* PRG RAM */
-			idx = address & 0x1fff;
+			idx = (((m1->chr0_reg & 0x0c) >> 2) * 0x2000) + (address & 0x1fff);
 			m1->prg_ram[idx] = value;
 		} else if (address >= 0x8000 && address <= 0xffff) {
 			if ((value & 0x80)) {
@@ -292,14 +292,14 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 
 	case CMEM_READ:
 		if (address >= 0x6000 && address <= 0x7fff) {
-			idx = address - 0x6000;
+			idx = (((m1->chr0_reg & 0x0c) >> 2) * 0x2000) + (address & 0x1fff);
 			return m1->prg_ram[idx];
 		} else if (address >= 0x8000 && address <= 0xbfff) {
 			return cartridge->rom
-				->prg_rom[m1->prg_bank[0] + (address - 0x8000)];
+				->prg_rom[m1->prg_bank[0] + (address & 0x3fff)];
 		} else if (address >= 0xc000 && address <= 0xffff) {
 			return cartridge->rom
-				->prg_rom[m1->prg_bank[1] + (address - 0xc000)];
+				->prg_rom[m1->prg_bank[1] + (address & 0x3fff)];
 		}
 		break;
 	}
@@ -325,7 +325,7 @@ uint8_t m1_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 	if (address >= 0 && address <= 0x0fff) {
 		idx = m1->chr_bank[0] + address;
 	} else if (address >= 0x1000 && address <= 0x1fff) {
-		idx = m1->chr_bank[1] + (address - 0x1000);
+		idx = m1->chr_bank[1] + (address & 0x0fff);
 	}
 
 	switch (op) {
