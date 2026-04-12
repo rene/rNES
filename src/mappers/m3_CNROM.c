@@ -113,16 +113,20 @@ static uint8_t m3_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 		if (address >= 0x6000 && address <= 0x7fff) {
 			/* PRG RAM */
 			idx = address & 0x7ff;
-			m3->prg_ram[idx] = value;
+			return m3->prg_ram[idx];
 		} else if (address >= 0x8000 && address <= 0xffff) {
-			idx = address - 0x8000;
+			idx = address & 0x7fff;
 			return cartridge->rom->prg_rom[idx];
 		}
 		break;
 
 	case CMEM_WRITE:
-		if (address >= 0x8000 && address <= 0xffff) {
-			m3->chr_bank = (value & 0x0f);
+		if (address >= 0x6000 && address <= 0x7fff) {
+			/* PRG RAM */
+			idx = address & 0x7ff;
+			m3->prg_ram[idx] = value;
+		} else if (address >= 0x8000 && address <= 0xffff) {
+			m3->chr_bank = (value & 0x03);
 			return value;
 		}
 		return value;
