@@ -37,7 +37,38 @@
 
 #include "ringbuffer.h"
 
-#ifdef _POSIX_C_SOURCE
+#ifdef _WIN32
+static inline int s_init(sem_t *s, unsigned int value)
+{
+	*s = CreateSemaphore(NULL, value, LONG_MAX, NULL);
+	if (s == NULL)
+		return -1;
+	else
+		return 0;
+};
+static inline int s_lock(sem_t *s)
+{
+	DWORD ret = WaitForSingleObject(*s, INFINITE);
+	if (ret == WAIT_OBJECT_0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_unlock(sem_t *s)
+{
+	if (ReleaseSemaphore(*s, 1, NULL) == 0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_destroy(sem_t *s)
+{
+	if (CloseHandle(*s) == 0)
+		return 0;
+	else
+		return -1;
+};
+#elif defined(_POSIX_C_SOURCE)
 /** Initialize semaphore */
 static inline int s_init(sem_t *sem, unsigned int value)
 {

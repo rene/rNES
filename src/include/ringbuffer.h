@@ -40,8 +40,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#ifdef _POSIX_C_SOURCE
+#if defined(_POSIX_C_SOURCE)
 #include <semaphore.h>
+#elif defined(_WIN32)
+#include <synchapi.h>
+#include <windows.h>
+
+typedef HANDLE sem_t;
 #else
 #warning Semaphore functions not available, ring buffer is not thread safe!
 typedef unsigned int sem_t;
