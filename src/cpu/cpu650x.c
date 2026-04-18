@@ -195,7 +195,14 @@ static void (*cpu_kill_cb)(struct _cpu650x_state);
 /** Debug function callback */
 static void (*cpu_debug_cb)(struct _cpu650x_state);
 
-#ifndef CPU_THREAD_SAFE
+/* NOTE: POSIX semaphores and other lock mechanisms on Windows have shown
+ * horrible performance during the emulation, so it is better not to use them
+ * for now.
+ */
+#if !defined(CPU_THREAD_SAFE) || defined(_WIN32)
+#ifdef CPU_THREAD_SAFE
+#warning CPU thread safe is not supported on Windows.
+#endif
 /** Generic sem_t type */
 typedef int sem_t;
 /** Initialize semaphores */
