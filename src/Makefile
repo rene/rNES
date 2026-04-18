@@ -24,7 +24,8 @@ sources = cpu/cpu650x.c sbus.c romdec.c palette.c \
 ## GUI options
 gui_objects = gui/sdl/gui.o gui/sdl/audio.o gui/sdl/clock.o
 gui_sources = gui/sdl
-LDFLAGS += $(shell pkg-config --libs sdl2) -lSDL2_ttf
+CFLAGS += $(shell pkg-config --cflags sdl2 SDL2_ttf)
+LDFLAGS += $(shell pkg-config --libs sdl2 SDL2_ttf)
 #############################################################
 
 export CC
