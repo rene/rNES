@@ -1,5 +1,4 @@
-CFLAGS   += $(shell pkg-config --cflags sdl2) -I./include/
-LDFLAGS  += $(shell pkg-config --libs sdl2) -lSDL2_ttf
+CFLAGS   += -I./include/
 
 sources = gui.c audio.c clock.c
 
