@@ -14,7 +14,9 @@ of NES games.
 
 # How to build
 
-Currently only a posix system with lib SDL is supported. On a Debian family system, make sure to install the following packages:
+## POSIX systems
+
+Currently only an interface using lib SDL is implemented. On a Debian family system, make sure to install the following packages:
 
 - libsdl2-dev
 - libsdl2-ttf-dev
@@ -43,6 +45,36 @@ Use: ./rNES [-s <scale_factor>] [-d] [-h] <rom_file>
     -v, --version    Show version
     -l, --license    Show license
     -h, --help       Show this help
+```
+
+## Windows (cross-compile)
+
+A static version for Windows can be cross-compiled on Linux using the MinGW-w64 toolchain.
+
+The script *build-win32-cross.sh* builds the cross-compiler environment
+with *SDL2* and *SDL2_ttf* libraries.
+
+First, ensure you have the MinGW-w64 toolchain installed (*x86_64-w64-mingw32-gcc* and
+*x86_64-w64-mingw32-g++* must be available on the host system).
+
+On Debian the following packages must be installed: *gcc-mingw-w64* and
+*g++-mingw-w64*:
+
+```sh
+sudo apt install -y gcc-mingw-w64 g++-mingw-w64
+```
+
+Run the *build-win32-cross.sh* script to create the build environment:
+
+```sh
+cd src
+./scripts/build-win32-cross.sh
+```
+
+Once the environment is ready, rNES.exe can be built using *make*:
+
+```sh
+make -f Makefile.mingw
 ```
 
 # Tools
