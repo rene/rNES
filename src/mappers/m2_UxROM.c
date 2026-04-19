@@ -110,7 +110,6 @@ static uint8_t m2_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 	switch (op) {
 	case CMEM_READ:
 		return cartridge->rom->prg_rom[idx % cartridge->rom->prg_size];
-		break;
 
 	case CMEM_WRITE:
 		if (address >= 0x8000 && address <= 0xffff) {
