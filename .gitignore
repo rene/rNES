@@ -3,5 +3,6 @@
 *.dep
 src/docs/dist
 src/roms
+src/cross-compile
 tags
 rNES
