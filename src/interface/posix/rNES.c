@@ -66,6 +66,21 @@ static int quit_emulation;
 /** Semaphore to wait for GUI initialization */
 sem_t wait_gui;
 
+/* Platform specific tuning */
+#ifdef _WIN32
+#include <timeapi.h>
+#include <windows.h>
+inline static void platform_start(void)
+{
+	timeBeginPeriod(1);
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+};
+inline static void platform_end(void) { timeEndPeriod(1); };
+#else
+inline static void platform_start(void) {};
+inline static void platform_end(void) {};
+#endif
+
 /**
  * Callback for CPU kill
  */
@@ -394,6 +409,9 @@ int main(int argc, char *const argv[])
 	show_rom_info(cartridge->rom, cartridge->chr_ram);
 	show_control_info();
 
+	/* Run custom platform procedures (if any) */
+	platform_start();
+
 	/* Initialize semaphore */
 	if (sem_init(&wait_gui, 0, 0) < 0) {
 		log_err("Cannot initialize semaphore!\n");
@@ -423,14 +441,14 @@ int main(int argc, char *const argv[])
 	ppu_reset();
 	apu_reset();
 
-	/* Create and initialize threads */
+	/* Create and initialize GUI thread */
 	pthread_attr_init(&attr_gui);
 	pthread_create(&th_gui, &attr_gui, &gui_th_loop, &scale);
 
 	/* Wait GUI to get ready */
 	sem_wait(&wait_gui);
 
-	/* Create and initialize thread */
+	/* Create and initialize emulation thread */
 	pthread_attr_init(&attr_emu);
 	pthread_create(&th_emu, &attr_emu, &emu_th_loop, NULL);
 
@@ -449,6 +467,8 @@ int main(int argc, char *const argv[])
 	cartridge_unload(cartridge);
 	gui_destroy();
 	sem_destroy(&wait_gui);
+
+	platform_end();
 
 	log_info("Done.\n");
 	return EXIT_SUCCESS;
