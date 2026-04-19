@@ -43,7 +43,6 @@
 #include "sbus.h"
 #include <getopt.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -80,6 +79,115 @@ inline static void platform_end(void) { timeEndPeriod(1); };
 inline static void platform_start(void) {};
 inline static void platform_end(void) {};
 #endif
+
+#ifdef _WIN32
+static inline int s_init(sem_t *s, unsigned int value)
+{
+	*s = CreateSemaphore(NULL, value, LONG_MAX, NULL);
+	if (s == NULL)
+		return -1;
+	else
+		return 0;
+};
+static inline int s_lock(sem_t *s)
+{
+	DWORD ret = WaitForSingleObject(*s, INFINITE);
+	if (ret == WAIT_OBJECT_0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_unlock(sem_t *s)
+{
+	if (ReleaseSemaphore(*s, 1, NULL) == 0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_destroy(sem_t *s)
+{
+	if (CloseHandle(*s) == 0)
+		return 0;
+	else
+		return -1;
+};
+#elif defined(__APPLE__)
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	*sem = dispatch_semaphore_create(value);
+	if (sem == NULL)
+		return -1;
+	else
+		return 0;
+}
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem)
+{
+	dispatch_release(*sem);
+	return 0;
+};
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem)
+{
+	return dispatch_semaphore_wait(*sem, DISPATCH_TIME_FOREVER);
+};
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem)
+{
+	return dispatch_semaphore_signal(*sem);
+};
+#elif defined(_POSIX_C_SOURCE)
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	return sem_init(sem, 0, value);
+}
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem) { return sem_destroy(sem); };
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem) { return sem_wait(sem); };
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem) { return sem_post(sem); };
+#else
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = value;
+	return 0;
+};
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = 0;
+	return 0;
+};
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+	int attempts = 1000;
+
+	while (*s == 0 && attempts-- > 0)
+		;
+
+	*s = *s - 1;
+	return 0;
+};
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = *s + 1;
+	return 0;
+};
+#endif
+
 
 /**
  * Callback for CPU kill
@@ -307,7 +415,7 @@ static void *gui_th_loop(void *args)
 		log_err("Could not initialize GUI!\n");
 		return NULL;
 	}
-	sem_post(&wait_gui);
+	s_unlock(&wait_gui);
 	gui_main_loop();
 	quit_emulation = 1;
 	return NULL;
@@ -413,7 +521,7 @@ int main(int argc, char *const argv[])
 	platform_start();
 
 	/* Initialize semaphore */
-	if (sem_init(&wait_gui, 0, 0) < 0) {
+	if (s_init(&wait_gui, 0) < 0) {
 		log_err("Cannot initialize semaphore!\n");
 		cartridge_unload(cartridge);
 		return EXIT_FAILURE;
@@ -446,7 +554,7 @@ int main(int argc, char *const argv[])
 	pthread_create(&th_gui, &attr_gui, &gui_th_loop, &scale);
 
 	/* Wait GUI to get ready */
-	sem_wait(&wait_gui);
+	s_lock(&wait_gui);
 
 	/* Create and initialize emulation thread */
 	pthread_attr_init(&attr_emu);
@@ -466,7 +574,7 @@ int main(int argc, char *const argv[])
 	sbus_destroy();
 	cartridge_unload(cartridge);
 	gui_destroy();
-	sem_destroy(&wait_gui);
+	s_destroy(&wait_gui);
 
 	platform_end();
 

@@ -40,6 +40,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+/* For macOS compatibility */
+#ifndef ssize_t
+typedef long ssize_t;
+#endif
+
 /* LOG operations */
 #ifndef log_err
 #define log_err(...) fprintf(stderr, "Error: " __VA_ARGS__)

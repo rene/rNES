@@ -4,7 +4,7 @@ CLANG_FORMAT=$(shell which clang-format)
 
 RNES_VERSION ?= \"1.0\"
 
-LDFLAGS = -lpthread -lrt
+LDFLAGS = -lpthread
 CFLAGS = -Wall -I$(PWD)/include/ -I$(PWD)/cpu/include/ \
 		 -DSBUS_MEM -DCPU_THREAD_SAFE -DAPU_LINEAR_DAC_OUTPUT -DRNES_VERSION=$(RNES_VERSION)
 

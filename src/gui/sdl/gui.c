@@ -41,7 +41,6 @@
 #include <SDL.h>
 #include <SDL_audio.h>
 #include <SDL_ttf.h>
-#include <semaphore.h>
 
 #define WINDOW_TITLE "rNES"
 #define SCREEN_WIDTH 256
@@ -49,6 +48,114 @@
 
 #define KEY_PRESSED 1
 #define KEY_RELEASED 0
+
+#ifdef _WIN32
+static inline int s_init(sem_t *s, unsigned int value)
+{
+	*s = CreateSemaphore(NULL, value, LONG_MAX, NULL);
+	if (s == NULL)
+		return -1;
+	else
+		return 0;
+};
+static inline int s_lock(sem_t *s)
+{
+	DWORD ret = WaitForSingleObject(*s, INFINITE);
+	if (ret == WAIT_OBJECT_0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_unlock(sem_t *s)
+{
+	if (ReleaseSemaphore(*s, 1, NULL) == 0)
+		return 0;
+	else
+		return -1;
+};
+static inline int s_destroy(sem_t *s)
+{
+	if (CloseHandle(*s) == 0)
+		return 0;
+	else
+		return -1;
+};
+#elif defined(__APPLE__)
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	*sem = dispatch_semaphore_create(value);
+	if (sem == NULL)
+		return -1;
+	else
+		return 0;
+}
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem)
+{
+	dispatch_release(*sem);
+	return 0;
+};
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem)
+{
+	return dispatch_semaphore_wait(*sem, DISPATCH_TIME_FOREVER);
+};
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem)
+{
+	return dispatch_semaphore_signal(*sem);
+};
+#elif defined(_POSIX_C_SOURCE)
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	return sem_init(sem, 0, value);
+}
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem) { return sem_destroy(sem); };
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem) { return sem_wait(sem); };
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem) { return sem_post(sem); };
+#else
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = value;
+	return 0;
+};
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = 0;
+	return 0;
+};
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+	int attempts = 1000;
+
+	while (*s == 0 && attempts-- > 0)
+		;
+
+	*s = *s - 1;
+	return 0;
+};
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem)
+{
+	unsigned int *s = (unsigned int *)sem;
+
+	*s = *s + 1;
+	return 0;
+};
+#endif
 
 /** Control keys */
 enum CTRL_KEYS {
@@ -154,20 +261,20 @@ int gui_init(int scale)
 		   SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
 
 	/* Initialize sempahore */
-	if (sem_init(&rnes_gui.lock, 0, 1) < 0)
+	if (s_init(&rnes_gui.lock, 1) < 0)
 		return -1;
 
 	/* Initialize SDL */
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) {
 		log_err("Error initializing SDL library: %s\n", SDL_GetError());
-		sem_destroy(&rnes_gui.lock);
+		s_destroy(&rnes_gui.lock);
 		return -1;
 	}
 
 	/* Initialize audio mixer */
 	if (SDL_OpenAudio(&rnes_gui.mixer, NULL) < 0) {
 		log_err("Error initializing SDL sound mixer: %s\n", SDL_GetError());
-		sem_destroy(&rnes_gui.lock);
+		s_destroy(&rnes_gui.lock);
 		SDL_Quit();
 		return -1;
 	}
@@ -176,7 +283,7 @@ int gui_init(int scale)
 	if (TTF_Init() < 0) {
 		log_err("Error initializing TTF library: %s\n", TTF_GetError());
 		SDL_Quit();
-		sem_destroy(&rnes_gui.lock);
+		s_destroy(&rnes_gui.lock);
 		return -1;
 	}
 	rnes_gui.emb_font = SDL_RWFromMem(HUSSARBOLDWEBEDITION_XQ5O_TTF,
@@ -186,7 +293,7 @@ int gui_init(int scale)
 		log_err("Cannot open TTF Font.\n");
 		TTF_Quit();
 		SDL_Quit();
-		sem_destroy(&rnes_gui.lock);
+		s_destroy(&rnes_gui.lock);
 		return -1;
 	}
 
@@ -246,7 +353,7 @@ int gui_destroy(void)
 	SDL_Quit();
 
 	/* Destroy semaphore */
-	sem_destroy(&rnes_gui.lock);
+	s_destroy(&rnes_gui.lock);
 
 	return 0;
 }
@@ -261,7 +368,7 @@ int gui_main_loop(void)
 	rnes_gui.state = GUI_RUNNING;
 	quit = 0;
 	do {
-		sem_wait(&rnes_gui.lock);
+		s_lock(&rnes_gui.lock);
 
 		/* Clear GPU backbuffer*/
 		SDL_RenderClear(rnes_gui.renderer);
@@ -279,7 +386,7 @@ int gui_main_loop(void)
 		/* Present to screen */
 		SDL_RenderPresent(rnes_gui.renderer);
 
-		sem_post(&rnes_gui.lock);
+		s_unlock(&rnes_gui.lock);
 
 		while (SDL_PollEvent(&main_ev) != 0) {
 			if (main_ev.type == SDL_QUIT) {
@@ -365,7 +472,7 @@ void gui_draw_text(int x, int y, const char *text, RGB_t color)
 	if (gtext_surf == NULL)
 		return;
 
-	sem_wait(&rnes_gui.lock);
+	s_lock(&rnes_gui.lock);
 
 	/* Update text texture with the new surface */
 	SDL_Rect dest = {x, y, gtext_surf->w, gtext_surf->h};
@@ -373,7 +480,7 @@ void gui_draw_text(int x, int y, const char *text, RGB_t color)
 					  gtext_surf->pitch);
 	SDL_FreeSurface(gtext_surf);
 
-	sem_post(&rnes_gui.lock);
+	s_unlock(&rnes_gui.lock);
 }
 
 int gui_get_scale(void) { return rnes_gui.scale; }

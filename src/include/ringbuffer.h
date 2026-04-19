@@ -47,6 +47,10 @@
 #include <windows.h>
 
 typedef HANDLE sem_t;
+#elif defined(__APPLE__)
+#include <dispatch/dispatch.h>
+
+typedef dispatch_semaphore_t sem_t;
 #else
 #warning Semaphore functions not available, ring buffer is not thread safe!
 typedef unsigned int sem_t;

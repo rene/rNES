@@ -68,6 +68,32 @@ static inline int s_destroy(sem_t *s)
 	else
 		return -1;
 };
+#elif defined(__APPLE__)
+/** Initialize semaphore */
+static inline int s_init(sem_t *sem, unsigned int value)
+{
+	*sem = dispatch_semaphore_create(value);
+	if (sem == NULL)
+		return -1;
+	else
+		return 0;
+}
+/** Destroy semaphore */
+static inline int s_destroy(sem_t *sem)
+{
+	dispatch_release(*sem);
+	return 0;
+};
+/** Semaphore DOWN function */
+static inline int s_lock(sem_t *sem)
+{
+	return dispatch_semaphore_wait(*sem, DISPATCH_TIME_FOREVER);
+};
+/** Semaphore UP function */
+static inline int s_unlock(sem_t *sem)
+{
+	return dispatch_semaphore_signal(*sem);
+};
 #elif defined(_POSIX_C_SOURCE)
 /** Initialize semaphore */
 static inline int s_init(sem_t *sem, unsigned int value)
