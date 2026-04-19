@@ -54,7 +54,7 @@ ssize_t load_file(const char *pathname, uint8_t **data)
 	int ret;
 	struct stat finfo;
 	*data = NULL;
-	if ((fp = fopen(pathname, "r")) == NULL) {
+	if ((fp = fopen(pathname, "rb")) == NULL) {
 		return -errno;
 	}
 	if ((ret = fstat(fileno(fp), &finfo)) < 0) {
