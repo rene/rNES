@@ -1,0 +1,65 @@
+name: cppcheck action
+on:
+  pull_request:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+  push:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+
+jobs:
+  build:
+    name: cppcheck-test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install cppcheck
+        run: sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        id: cppcheck
+        run: |
+          cppcheck \
+            --error-exitcode=1 \
+            --output-file=cppcheck_report.txt \
+            --template='{file}:{line}:{column}: {severity}: {message} [{id}]' \
+            --suppress=missingIncludeSystem \
+            . 2>&1
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Annotate PR with cppcheck errors
+        if: failure() && github.event_name == 'pull_request'
+        run: |
+          while IFS= read -r line; do
+            # Parse lines matching: file:line:col: severity: message [id]
+            if [[ "$line" =~ ^(.+):([0-9]+):([0-9]+):\ (error|warning|style|performance|portability):\ (.+)$ ]]; then
+              file="${BASH_REMATCH[1]}"
+              line_num="${BASH_REMATCH[2]}"
+              severity="${BASH_REMATCH[4]}"
+              message="${BASH_REMATCH[5]}"
+
+              case "$severity" in
+                error)        level="error" ;;
+                warning)      level="warning" ;;
+                *)            level="notice" ;;
+              esac
+
+              echo "::${level} file=${file},line=${line_num}::${message}"
+            fi
+          done < cppcheck_report.txt
+
+      - name: Upload cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: cppcheck-report
+          path: cppcheck_output.txt
