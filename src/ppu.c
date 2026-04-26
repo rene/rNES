@@ -666,7 +666,7 @@ void ppu_clock(void)
 
 		/* Populate sprite shift register with sprite data */
 		if (ppu.cycle == 261) {
-			for (i = 0; i < ppu.sprite_cnt; i++) {
+			for (i = 0; i < ppu.sprite_cnt && i < TOTAL_SPRITES_AUX; i++) {
 				/* First, let's find the corresponding row of the sprites
 				 * to be plotted
 				 */
@@ -738,7 +738,7 @@ void ppu_clock(void)
 			idx_sp = 0;
 			sp_prio = 0;
 			cur_x = ppu.cycle - 1;
-			for (i = 0; i < ppu.sprite_cnt; i++) {
+			for (i = 0; i < ppu.sprite_cnt && i < TOTAL_SPRITES_AUX; i++) {
 				if (cur_x >= ppu.OAM_aux.sprites[i].X &&
 					cur_x < (ppu.OAM_aux.sprites[i].X + 8)) {
 					sp[0] = get_bit(ppu.sp_lsb[i], 0x80, 0);
