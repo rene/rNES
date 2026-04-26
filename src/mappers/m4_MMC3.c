@@ -121,7 +121,7 @@ struct _mmc3_mapper {
  */
 static void m4_mapper_IRQ_count(mapper_t *m)
 {
-	struct _mmc3_mapper *mmc3 = (struct _mmc3_mapper *)m;
+	struct _mmc3_mapper *mmc3 = (struct _mmc3_mapper *)m->data;
 
 	/* If the reload flag was set or the counter hit 0 */
 	if (mmc3->IRQ_counter == 0 || mmc3->IRQ_reload) {
@@ -201,7 +201,7 @@ static int m4_mapper_init(struct _mapper_t *m, cartridge_t *c)
 	mmc3->last_bank[1] = c->rom->prg_size - 0x4000;
 
 	/* Set PPU callback */
-	ppu_set_mapper_trigger_cb((mapper_t *)mmc3, m4_mapper_IRQ_count);
+	ppu_set_mapper_trigger_cb(m, m4_mapper_IRQ_count);
 	return 0;
 }
 
@@ -294,10 +294,12 @@ uint8_t m4_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 						   uint16_t address, uint8_t value)
 {
 	uint64_t idx;
+	uint64_t prg_mask;
 	int reg;
 	cartridge_t *cartridge = m->cartridge;
 	struct _mmc3_mapper *mmc3 = (struct _mmc3_mapper *)m->data;
 
+	prg_mask = cartridge->rom->prg_size - 1;
 	switch (op) {
 	case CMEM_READ:
 		if (address >= 0x6000 && address <= 0x7fff) {
@@ -314,12 +316,12 @@ uint8_t m4_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 					((mmc3->reg_bank[6] & 0x3f) * 0x2000) + (address & 0x1fff);
 			else
 				idx = mmc3->last_bank[1] + (address & 0x1fff);
-			return cartridge->rom->prg_rom[idx];
+			return cartridge->rom->prg_rom[idx & prg_mask];
 
 		} else if (address >= 0xa000 && address <= 0xbfff) {
 			/* PRG mode: 0/1 - R:7 */
 			idx = ((mmc3->reg_bank[7] & 0x3f) * 0x2000) + (address & 0x1fff);
-			return cartridge->rom->prg_rom[idx];
+			return cartridge->rom->prg_rom[idx & prg_mask];
 
 		} else if (address >= 0xc000 && address <= 0xdfff) {
 			/* PRG mode: 0 - second last bank | 1 - R:6 */
@@ -328,12 +330,12 @@ uint8_t m4_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 			else
 				idx =
 					((mmc3->reg_bank[6] & 0x3f) * 0x2000) + (address & 0x1fff);
-			return cartridge->rom->prg_rom[idx];
+			return cartridge->rom->prg_rom[idx & prg_mask];
 
 		} else if (address >= 0xe000 && address <= 0xffff) {
 			/* PRG mode: 0/1 - fixed to the last bank */
 			idx = mmc3->last_bank[0] + (address & 0x1fff);
-			return cartridge->rom->prg_rom[idx];
+			return cartridge->rom->prg_rom[idx & prg_mask];
 		}
 		break;
 
@@ -407,6 +409,7 @@ uint8_t m4_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 						   uint16_t address, uint8_t value)
 {
 	uint64_t idx = 0;
+	uint64_t chr_mask;
 	cartridge_t *cartridge = m->cartridge;
 	struct _mmc3_mapper *mmc3 = (struct _mmc3_mapper *)m->data;
 
@@ -452,14 +455,15 @@ uint8_t m4_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 		}
 	}
 
+	chr_mask = cartridge->rom->chr_size - 1;
 	switch (op) {
 	case CMEM_READ:
-		return cartridge->rom->chr_rom[idx];
+		return cartridge->rom->chr_rom[idx & chr_mask];
 		break;
 
 	case CMEM_WRITE:
 		if (cartridge->chr_ram)
-			cartridge->rom->chr_rom[idx] = value;
+			cartridge->rom->chr_rom[idx & chr_mask] = value;
 		return value;
 	}
 
