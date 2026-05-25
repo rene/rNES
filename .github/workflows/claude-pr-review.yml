@@ -79,7 +79,7 @@ jobs:
             Write,
             Edit
 
-          custom_system_prompt: |
+          custom_instructions: |
             You are a code reviewer for the rNES project, a NES emulator written in C.
 
             YOUR ONLY TASK: review the pull request diff and post actionable inline
@@ -105,4 +105,4 @@ jobs:
               feedback over general observations
 
           timeout_minutes: 15
-          max_turns: 10
+          max_turns: 30
