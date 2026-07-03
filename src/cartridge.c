@@ -91,7 +91,7 @@ int cartridge_load(const char *pathname, cartridge_t **cartridge)
 
 	/* Initialize VRAM */
 	new_cartridge->vram = calloc(NES_VRAM_SIZE, sizeof(uint8_t));
-	if (new_cartridge == NULL) {
+	if (new_cartridge->vram == NULL) {
 		unload_rom(new_cartridge->rom);
 		free(new_cartridge);
 		return -ENOMEM;
