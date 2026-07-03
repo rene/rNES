@@ -1246,6 +1246,7 @@ void cpu_reset(void)
 	CPU.irq_pin = 1;
 	CPU.nmi_pin = 1;
 	CPU.nmi_trigger = 0;
+	CPU.exec_pending = 0;
 
 	/* Reset takes 8 clock cycles */
 	CPU.clock_rcycles = 8;
@@ -1401,32 +1402,15 @@ void cpu_clock(void)
 			return;
 		}
 
-		/* If some interrupt was triggered, it should wait for current
-		 * instruction to finish in order to jump to server the interrupt.
-		 * NMI has priority over masked interrupt.
+		/* Complete the instruction decoded on the previous boundary. Its cycle
+		 * window has now passed, so its bus access (read/write) and execution
+		 * is performed here, on the last cycle. This matches the real 6502,
+		 * which performs the memory access on the last cycle rather than the
+		 * first.
 		 */
-		if (CPU.nmi_trigger == 1) {
-			do_nmi();
-		} else if (CPU.irq_pin == 0 && !CPU.P.flags.I) {
-			do_irq();
-		} else {
-			/* Each instruction takes different amount of clock cycles to be
-			 * executed. However, in this emulation the instruction will be
-			 * executed at once and will do nothing on the remaining cycles.
-			 */
-			opcode   = sbus_read(CPU.PC++);
-			addrmode = op_codes[opcode].mode;
-
-			/* Fetch operands and decode instruction */
-			cross = fetch_operand(op_codes[opcode].mode);
-			CPU.clock_rcycles = op_codes[opcode].clock_cycles;
-
-			/* Check if need to add a cycle */
-			if (cross && op_codes[opcode].add_cycles == 1)
-				CPU.clock_rcycles++;
-
-			/* Execute instruction */
+		if (CPU.exec_pending) {
 			op_codes[opcode].instruction();
+			CPU.exec_pending = 0;
 			if (cpu_debug_cb != NULL) {
 				state_info.opcode      = opcode;
 				state_info.opcode_name = op_codes[opcode].name;
@@ -1440,6 +1424,30 @@ void cpu_clock(void)
 			 op_codes[opcode].name, CPU.A, CPU.X, CPU.Y, CPU.P.reg,
 			 fetched_data, fetched_addr);
 #endif
+		}
+
+		/* Interrupts are polled at the instruction boundary, after the
+		 * instruction that just finished and before fetching the next one.
+		 * NMI has priority over the maskable interrupt.
+		 */
+		if (CPU.nmi_trigger == 1) {
+			do_nmi();
+		} else if (CPU.irq_pin == 0 && !CPU.P.flags.I) {
+			do_irq();
+		} else {
+			/* Decode the next instruction and reserve its cycles, but defer
+			 * its execution to the end of the window.
+			 */
+			opcode   = sbus_read(CPU.PC++);
+			addrmode = op_codes[opcode].mode;
+			cross    = fetch_operand(op_codes[opcode].mode);
+			CPU.clock_rcycles = op_codes[opcode].clock_cycles;
+
+			/* Check if need to add a cycle */
+			if (cross && op_codes[opcode].add_cycles == 1)
+				CPU.clock_rcycles++;
+
+			CPU.exec_pending = 1;
 		}
 	}
 
