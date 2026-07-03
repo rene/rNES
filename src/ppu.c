@@ -251,6 +251,7 @@ void ppu_reset(void)
 	power_up = 0;
 	ppu.scanline = 0;
 	ppu.cycle = 0;
+	ppu.odd_frame = 0;
 	ppu.iregs.w = 0;
 	ppu.iregs.v.reg.raw = 0;
 	ppu.iregs.t.reg.raw = 0;
@@ -640,10 +641,11 @@ void ppu_clock(void)
 			ppu.sprite_cnt = 0;
 			ppu.draw_sp0 = 0;
 			for (i = 0; i < TOTAL_SPRITES && ppu.sprite_cnt <= 8; i++) {
-				/* Check if we have valid date in the sprite */
-				if (ppu.OAM.sprites[i].Y == 0 || ppu.OAM.sprites[i].Y == 0xff)
-					continue;
-				/* Check Y coordinate */
+				/* Check Y coordinate. Sprite should fit in the screen.
+				 * Y == 0 is a valid position, so it should not be skipped.
+				 * Otherwise sprite 0 placed at the top of the screen
+				 * won't trigger a sprite 0 hit.
+				 */
 				if ((ppu.scanline >= ppu.OAM.sprites[i].Y) &&
 					(ppu.scanline <
 					 (ppu.OAM.sprites[i].Y + get_sprite_height()))) {
@@ -856,18 +858,19 @@ void ppu_clock(void)
 
 	/* Advance one cycle */
 	ppu.cycle++;
-	/* Odd frame skip. Cycles per scanline for:
-	 * Even frames: 341
-	 * Odd frames: 340
+	/* Every scanline is 341 cycles long, except the pre-render scanline (261)
+	 * on odd frames when rendering is enabled, where the last cycle is skipped
+	 * (340 cycles). This is the NES "odd frame skip".
 	 */
-	if ((ppu.scanline & 1) == 0)
-		nf = 341;
-	else
+	nf = 341;
+	if (ppu.scanline == 261 && ppu.odd_frame && is_rendering())
 		nf = 340;
 	if (ppu.cycle >= nf) {
 		ppu.cycle = 0;
 		ppu.scanline++;
-		if (ppu.scanline > 261)
+		if (ppu.scanline > 261) {
 			ppu.scanline = 0;
+			ppu.odd_frame = !ppu.odd_frame;
+		}
 	}
 }
