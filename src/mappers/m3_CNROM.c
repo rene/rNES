@@ -165,7 +165,7 @@ static uint8_t m3_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 	return 0;
 }
 
-/** Mapper 2 struct */
+/** Mapper 3 struct */
 mapper_t m3_CNROM = {
 	.init = m3_mapper_init,
 	.reset = mapper_reset,
