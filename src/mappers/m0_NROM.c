@@ -209,9 +209,13 @@ static int m0_mapper_init(struct _mapper_t *m, cartridge_t *c)
 static int m0_mapper_finalize(struct _mapper_t *m)
 {
 	struct _m0_mapper *m0 = (struct _m0_mapper *)m->data;
+	cartridge_t *cartridge = m->cartridge;
 
-	free(m0->prg_ram);
-	free(m0->chr_mem);
+	/* Free PRG and CHR roms only if they were allocated by the mapper */
+	if (m0->prg_ram != cartridge->rom->prg_rom)
+		free(m0->prg_ram);
+	if (m0->chr_mem != cartridge->rom->chr_rom)
+		free(m0->chr_mem);
 	free(m0);
 	m->data = NULL;
 	return 0;
