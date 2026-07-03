@@ -93,6 +93,8 @@ struct _cpu650x {
 	uint8_t nmi_pin;
 	/** NMI signal edge detection */
 	uint8_t nmi_trigger;
+	/** Flag to execute decoded instruction */
+	uint8_t exec_pending;
 	/** CPU running state */
 	enum _CPU_STATE state;
 };
