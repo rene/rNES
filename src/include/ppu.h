@@ -241,6 +241,8 @@ struct _ppu {
 	uint8_t fine_X;
 	/** Number of sprites being drawing on current frame */
 	uint8_t sprite_cnt;
+	/** Frame parity (1 on odd frames) */
+	uint8_t odd_frame;
 	/** Callback to trigger mapper clock */
 	void (*trigger_cb)(mapper_t *);
 	/** Mapper for the trigger callback */
