@@ -98,9 +98,10 @@ int load_rom(const char *pathname, rom_t **rom)
 		romf->chr_size = romf->header->chr_size * (8 * 1024);
 	} else {
 		if (romf->header->flag9.nes.prgrom_size < 0xf) {
+			/* Size in 16 KB units: MSB nibble (flag9) + LSB byte */
 			romf->prg_size =
-				((romf->header->flag9.nes.prgrom_size << 4) & 0xf0) |
-				(romf->header->prg_size & 0x0f);
+				((romf->header->flag9.nes.prgrom_size << 8) & 0xf00) |
+				romf->header->prg_size;
 			romf->prg_size *= (16 * 1024);
 		} else {
 			/* Get exponent and multiplier */
@@ -111,9 +112,10 @@ int load_rom(const char *pathname, rom_t **rom)
 		}
 
 		if (romf->header->flag9.nes.chrrom_size < 0xf) {
+			/* Size in 8 KB units: MSB nibble (flag9) + LSB byte */
 			romf->chr_size =
-				((romf->header->flag9.nes.chrrom_size << 4) & 0xf0) |
-				(romf->header->prg_size & 0x0f);
+				((romf->header->flag9.nes.chrrom_size << 8) & 0xf00) |
+				romf->header->chr_size;
 			romf->chr_size *= (8 * 1024);
 		} else {
 			/* Get exponent and multiplier */
@@ -142,7 +144,7 @@ int load_rom(const char *pathname, rom_t **rom)
 		romf->mapper = ((romf->header->flag7.ines.mapper << 4) & 0xf0) |
 					   (romf->header->flag6.nes.mapper & 0xf);
 	} else {
-		romf->mapper = ((romf->header->flag8.raw << 8) & 0xff00) |
+		romf->mapper = ((romf->header->flag8.nes.mapper << 8) & 0xf00) |
 					   ((romf->header->flag7.nes.mapper << 4) & 0xf0) |
 					   (romf->header->flag6.nes.mapper & 0xf);
 	}
