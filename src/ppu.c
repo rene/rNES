@@ -760,7 +760,7 @@ void ppu_clock(void)
 						if (ppu.PPUMASK.reg.greyscale)
 							spal &= 0x30;
 
-						sp_pixel = sys_pal->color[spal];
+						sp_pixel = sys_pal->color[spal & 0x3f];
 						sp_prio = ppu.OAM_aux.sprites[i].attr.priority;
 
 						draw_sp = 1;
@@ -800,7 +800,7 @@ void ppu_clock(void)
 			/* Check for greyscale mode */
 			if (ppu.PPUMASK.reg.greyscale)
 				bpal &= 0x30;
-			bg_pixel = sys_pal->color[bpal];
+			bg_pixel = sys_pal->color[bpal & 0x3f];
 
 			/* Process background and foreground pixels in order to define the
 			 * final pixel to draw.
