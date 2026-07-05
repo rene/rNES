@@ -110,6 +110,15 @@ uint8_t cpu_mem[65536];
 		__stack_data; \
 	})
 
+/* Read-Modify-Write: some instructions perform a dummy write of the
+ * unmodified value before writing the modified one, strobing the address
+ * twice. This might affect memory-mapped I/O devices.
+ */
+#define RMW_WRITE(addr, current, value) do {\
+		sbus_write(addr, current); \
+		sbus_write(addr, value); \
+	} while (0)
+
 /** Check and perform conditional branch (relative jump) */
 #define COND_BRANCH(cond) do {\
 		uint16_t addr; \
@@ -268,6 +277,8 @@ static void AND(void)
 
 static void ASL(void)
 {
+	uint8_t orig;
+
 	if (addrmode == mIMP) {
 		SET_PFLAG(CPU.P.flags.C, (CPU.A & 0x80) != 0);
 		CPU.A = (CPU.A << 1) & 0xfe;
@@ -275,11 +286,12 @@ static void ASL(void)
 		SET_PFLAG(CPU.P.flags.Z, CPU.A == 0);
 	} else {
 		FETCH_DATA();
+		orig = fetched_data;
 		SET_PFLAG(CPU.P.flags.C, (fetched_data & 0x80) != 0);
 		fetched_data = (fetched_data << 1) & 0xfe;
 		SET_PFLAG(CPU.P.flags.N, (fetched_data & 0x80) != 0);
 		SET_PFLAG(CPU.P.flags.Z, fetched_data == 0);
-		sbus_write(fetched_addr, fetched_data);
+		RMW_WRITE(fetched_addr, orig, fetched_data);
 	}
 }
 
@@ -413,8 +425,8 @@ static void DEC(void)
 	uint8_t res;
 
 	FETCH_DATA();
-	res	= fetched_data - 1;
-	sbus_write(fetched_addr, res);
+	res = fetched_data - 1;
+	RMW_WRITE(fetched_addr, fetched_data, res);
 	SET_PFLAG(CPU.P.flags.N, (res & 0x80) != 0);
 	SET_PFLAG(CPU.P.flags.Z, res == 0);
 }
@@ -447,7 +459,7 @@ static void INC(void)
 
 	FETCH_DATA();
 	res = fetched_data + 1;
-	sbus_write(fetched_addr, res);
+	RMW_WRITE(fetched_addr, fetched_data, res);
 	SET_PFLAG(CPU.P.flags.N, (res & 0x80) != 0);
 	SET_PFLAG(CPU.P.flags.Z, res == 0);
 }
@@ -509,6 +521,8 @@ static void LDY(void)
 
 static void LSR(void)
 {
+	uint8_t orig;
+
 	if (addrmode == mIMP) {
 		SET_PFLAG(CPU.P.flags.C, (CPU.A & 0x1) != 0);
 		CPU.A         = ((CPU.A >> 1) & 0x7f);
@@ -516,11 +530,12 @@ static void LSR(void)
 		SET_PFLAG(CPU.P.flags.Z, CPU.A == 0);
 	} else {
 		FETCH_DATA();
+		orig = fetched_data;
 		SET_PFLAG(CPU.P.flags.C, (fetched_data & 0x1) != 0);
 		fetched_data  = ((fetched_data >> 1) & 0x7f);
 		CPU.P.flags.N = 0;
 		SET_PFLAG(CPU.P.flags.Z, fetched_data == 0);
-		sbus_write(fetched_addr, fetched_data);
+		RMW_WRITE(fetched_addr, orig, fetched_data);
 	}
 }
 
@@ -561,6 +576,7 @@ static void PLP(void)
 
 static void ROL(void)
 {
+	uint8_t orig;
 	uint8_t tmp = CPU.P.flags.C;
 
 	if (addrmode == mIMP) {
@@ -570,16 +586,18 @@ static void ROL(void)
 		SET_PFLAG(CPU.P.flags.Z, CPU.A == 0);
 	} else {
 		FETCH_DATA();
+		orig = fetched_data;
 		SET_PFLAG(CPU.P.flags.C, (fetched_data & 0x80) != 0);
 		fetched_data = ((fetched_data << 1) & 0xfe) | tmp;
 		SET_PFLAG(CPU.P.flags.N, (fetched_data & 0x80) != 0);
 		SET_PFLAG(CPU.P.flags.Z, fetched_data == 0);
-		sbus_write(fetched_addr, fetched_data);
+		RMW_WRITE(fetched_addr, orig, fetched_data);
 	}
 }
 
 static void ROR(void)
 {
+	uint8_t orig;
 	uint8_t tmp = CPU.P.flags.C;
 
 	if (addrmode == mIMP) {
@@ -589,12 +607,13 @@ static void ROR(void)
 		SET_PFLAG(CPU.P.flags.Z, CPU.A == 0);
 	} else {
 		FETCH_DATA();
+		orig = fetched_data;
 		SET_PFLAG(CPU.P.flags.C, (fetched_data & 0x1) != 0);
 		fetched_data  = ((fetched_data >> 1) & 0x7f)
 			| ((tmp << 7) & 0x80);
 		CPU.P.flags.N = tmp;
 		SET_PFLAG(CPU.P.flags.Z, fetched_data == 0);
-		sbus_write(fetched_addr, fetched_data);
+		RMW_WRITE(fetched_addr, orig, fetched_data);
 	}
 }
 
