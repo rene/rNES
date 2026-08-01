@@ -38,6 +38,20 @@
 #include <mappers/mapper.h>
 #include <stdlib.h>
 
+/** MMC1 S?ROM variant */
+enum _mmc1_variant {
+	/** SEROM, SHROM and SH1ROM */
+	MMC1_NORAM,
+	/** SNROM: 8KB CHR-ROM/RAM */
+	MMC1_SNROM,
+	/** SOROM: 16 KB PRG-RAM */
+	MMC1_SOROM,
+	/** SUROM: 512 KB PRG (A18 = CHR reg bit 4), 8 KB PRG-RAM */
+	MMC1_SUROM,
+	/** SXROM: 512 KB PRG (A18 = CHR reg bit 4), 32 KB PRG-RAM */
+	MMC1_SXROM
+};
+
 /** MMC1 control register */
 struct _mmc1_ctrl_reg {
 	union _ctrl_reg_bs {
@@ -53,8 +67,12 @@ struct _mmc1_ctrl_reg {
 
 /** SxROM custom data */
 struct _m1_mapper {
+	/** Mapper variant */
+	enum _mmc1_variant variant;
 	/** PRG RAM */
 	uint8_t *prg_ram;
+	/** PRG RAM size */
+	uint32_t prg_ram_size;
 	/** Shift register */
 	uint8_t shift_reg;
 	/** Control register */
@@ -72,6 +90,96 @@ struct _m1_mapper {
 	/** Indices of the CHR ROM current banks */
 	uint64_t chr_bank[2];
 };
+
+/**
+ * Identify the MMC1 board variant
+ * @param [in] c Cartridge
+ * @param [in] ram_size PRG-RAM size in bytes
+ * @return enum _mmc1_variant The identified variant
+ */
+static enum _mmc1_variant get_m1_variant(cartridge_t *c, uint32_t ram_size)
+{
+	if (c == NULL)
+		return MMC1_NORAM;
+
+	if (c->rom->prg_size >= 0x80000) {
+		if (ram_size >= 0x8000)
+			return MMC1_SXROM;
+		else
+			return MMC1_SUROM;
+	}
+
+	if (ram_size >= 0x4000)
+		return MMC1_SOROM;
+	if (ram_size >= 0x2000)
+		return MMC1_SNROM;
+
+	return MMC1_NORAM;
+}
+
+/**
+ * Get the total PRG RAM size
+ * @param [in] c Cartridge
+ * @return uint32_t Total PRG RAM size
+ */
+static uint32_t get_prg_ram_size(cartridge_t *c)
+{
+	uint32_t size = 0;
+	rom_header_t *h;
+
+	if (c == NULL)
+		return 0;
+	else
+		h = c->rom->header;
+
+	if (c->rom->rom_fmt == NES_FMT) {
+		if (h->flag10.nes.prgram_shift)
+			size += 64u << h->flag10.nes.prgram_shift;
+		if (h->flag10.nes.nvram_shift)
+			size += 64u << h->flag10.nes.nvram_shift;
+		return size;
+	}
+
+	/* iNES: PRG-RAM size field is in 8 KB units */
+	if (h->flag8.ines.prgram_size)
+		return h->flag8.ines.prgram_size * 0x2000;
+
+	/* prgram_size == 0: no PRG-RAM unless battery-backed is signalled */
+	if (!h->flag6.nes.persistmem)
+		return 0;
+
+	/* Battery-backed but size unspecified: assume 8 KB (SNROM) */
+	return 0x2000;
+}
+
+/**
+ * Compute the PRG-RAM index for an address in the $6000-$7FFF range.
+ * The bank comes from the CHR bank 0 register, with a variant-specific layout.
+ * @param [in] m Mapper's struct
+ * @param [in] address Memory address
+ * @return uint32_t Index into the PRG-RAM
+ */
+static uint32_t get_prg_ram_index(struct _m1_mapper *m1, uint16_t address)
+{
+	uint32_t bank = 0;
+
+	switch (m1->variant) {
+	case MMC1_SOROM:
+		/* bit 3 selects one of two 8 KB banks (16 KB total) */
+		bank = (m1->chr0_reg >> 3) & 0x1;
+		break;
+	case MMC1_SXROM:
+		/* bits 2-3 select one of four 8 KB banks (32 KB total) */
+		bank = (m1->chr0_reg >> 2) & 0x3;
+		break;
+	default:
+		/* Single 8 KB bank */
+		bank = 0;
+		break;
+	}
+
+	return (bank * 0x2000) + (address & 0x1fff);
+}
 
 /**
  * Translate mirror addresses of VRAM
@@ -130,7 +238,7 @@ static void m1_update(struct _mapper_t *m)
 {
 	cartridge_t *cartridge = m->cartridge;
 	struct _m1_mapper *m1 = (struct _m1_mapper *)m->data;
-	uint64_t prg_bank;
+	uint64_t prg_bank, prg_A18, last_bank;
 
 	/* Mirroring mode */
 	switch (m1->ctrl_reg.reg.bits.nametable) {
@@ -151,21 +259,32 @@ static void m1_update(struct _mapper_t *m)
 	/* PRG ROM bank mode
 	 * prg_bank[0] -> 0x8000 - 0xbfff
 	 * prg_bank[1] -> 0xc000 - 0xffff
+	 *
+	 * On 512 KB boards (SUROM/SXROM) CHR register bit 4 acts as PRG A18,
+	 * selecting one of two 256 KB halves.
 	 */
-	prg_bank = m1->prg_reg & 0x0f;
+	if (m1->variant == MMC1_SUROM || m1->variant == MMC1_SXROM) {
+		prg_A18 = (m1->chr0_reg & 0x10);
+		last_bank = prg_A18 | 0x0f;
+	} else {
+		prg_A18 = 0;
+		last_bank = (cartridge->rom->prg_size / 0x4000) - 1;
+	}
+	prg_bank = (m1->prg_reg & 0x0f) | prg_A18;
+
 	switch (m1->ctrl_reg.reg.bits.prg_mode) {
 	case 0:
 	case 1:
-		m1->prg_bank[0] = (prg_bank & 0x0e) * 0x4000;
-		m1->prg_bank[1] = ((prg_bank & 0x0e) | 0x1) * 0x4000;
+		m1->prg_bank[0] = (prg_bank & 0x1e) * 0x4000;
+		m1->prg_bank[1] = ((prg_bank & 0x1e) | 0x1) * 0x4000;
 		break;
 	case 2:
-		m1->prg_bank[0] = 0;
+		m1->prg_bank[0] = prg_A18 * 0x4000;
 		m1->prg_bank[1] = prg_bank * 0x4000;
 		break;
 	case 3:
 		m1->prg_bank[0] = prg_bank * 0x4000;
-		m1->prg_bank[1] = cartridge->rom->prg_size - 0x4000;
+		m1->prg_bank[1] = last_bank * 0x4000;
 		break;
 	}
 
@@ -206,11 +325,17 @@ static int m1_mapper_init(struct _mapper_t *m, cartridge_t *c)
 		return -EINVAL;
 	}
 
-	/* Allocates 32 KB of PRG RAM (maximum capacity) */
-	m1->prg_ram = calloc(0x8000, sizeof(uint8_t));
-	if (!m1->prg_ram) {
-		free(m->data);
-		return -ENOMEM;
+	/* Detect the board variant and allocate the corresponding PRG RAM size */
+	m1->prg_ram_size = get_prg_ram_size(c);
+	m1->variant = get_m1_variant(c, m1->prg_ram_size);
+	if (m1->prg_ram_size > 0) {
+		m1->prg_ram = calloc(m1->prg_ram_size, sizeof(uint8_t));
+		if (!m1->prg_ram) {
+			free(m->data);
+			return -ENOMEM;
+		}
+	} else {
+		m1->prg_ram = NULL;
 	}
 
 	/* Reset values */
@@ -258,8 +383,11 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 	case CMEM_WRITE:
 		if (address >= 0x6000 && address <= 0x7fff) {
 			/* PRG RAM */
-			idx = (((m1->chr0_reg & 0x0c) >> 2) * 0x2000) + (address & 0x1fff);
-			m1->prg_ram[idx] = value;
+			if (m1->prg_ram) {
+				idx = get_prg_ram_index(m1, address);
+				if (idx < m1->prg_ram_size)
+					m1->prg_ram[idx] = value;
+			}
 		} else if (address >= 0x8000 && address <= 0xffff) {
 			if ((value & 0x80)) {
 				/* Clear shift register */
@@ -292,8 +420,12 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 
 	case CMEM_READ:
 		if (address >= 0x6000 && address <= 0x7fff) {
-			idx = (((m1->chr0_reg & 0x0c) >> 2) * 0x2000) + (address & 0x1fff);
-			return m1->prg_ram[idx];
+			if (m1->prg_ram) {
+				idx = get_prg_ram_index(m1, address);
+				if (idx < m1->prg_ram_size)
+					return m1->prg_ram[idx];
+			}
+			return 0;
 		} else if (address >= 0x8000 && address <= 0xbfff) {
 			return cartridge->rom
 				->prg_rom[m1->prg_bank[0] + (address & 0x3fff)];
