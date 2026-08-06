@@ -34,6 +34,7 @@
  *
  * Implements the mapper 1 (SxROM).
  */
+#include <cpu650x.h>
 #include <errno.h>
 #include <mappers/mapper.h>
 #include <stdlib.h>
@@ -75,6 +76,10 @@ struct _m1_mapper {
 	uint32_t prg_ram_size;
 	/** Shift register */
 	uint8_t shift_reg;
+	/** CPU cycle of the last write to the serial port */
+	uint64_t last_write_cycle;
+	/** Whether last_write_cycle holds a valid sample yet */
+	uint8_t last_write_seen;
 	/** Control register */
 	struct _mmc1_ctrl_reg ctrl_reg;
 	/** CHR bank 0 */
@@ -144,11 +149,9 @@ static uint32_t get_prg_ram_size(cartridge_t *c)
 	if (h->flag8.ines.prgram_size)
 		return h->flag8.ines.prgram_size * 0x2000;
 
-	/* prgram_size == 0: no PRG-RAM unless battery-backed is signalled */
-	if (!h->flag6.nes.persistmem)
-		return 0;
-
-	/* Battery-backed but size unspecified: assume 8 KB (SNROM) */
+	/* A zero size field does not mean no PRG-RAM: the iNES specification
+	 * infers 8KB for compatibility.
+	 */
 	return 0x2000;
 }
 
@@ -239,6 +242,19 @@ static void m1_update(struct _mapper_t *m)
 	cartridge_t *cartridge = m->cartridge;
 	struct _m1_mapper *m1 = (struct _m1_mapper *)m->data;
 	uint64_t prg_bank, prg_A18, last_bank;
+	uint64_t prg_mask, chr_mask;
+
+	/* Wrap within the installed memory for higher addresses */
+	prg_mask = cartridge->rom->prg_size / 0x4000;
+	if (prg_mask)
+		prg_mask = prg_mask - 1;
+	else
+		prg_mask = 0;
+	chr_mask = cartridge->rom->chr_size / 0x1000;
+	if (chr_mask)
+		chr_mask = chr_mask - 1;
+	else
+		chr_mask = 0;
 
 	/* Mirroring mode */
 	switch (m1->ctrl_reg.reg.bits.nametable) {
@@ -275,16 +291,16 @@ static void m1_update(struct _mapper_t *m)
 	switch (m1->ctrl_reg.reg.bits.prg_mode) {
 	case 0:
 	case 1:
-		m1->prg_bank[0] = (prg_bank & 0x1e) * 0x4000;
-		m1->prg_bank[1] = ((prg_bank & 0x1e) | 0x1) * 0x4000;
+		m1->prg_bank[0] = ((prg_bank & 0x1e) & prg_mask) * 0x4000;
+		m1->prg_bank[1] = (((prg_bank & 0x1e) | 0x1) & prg_mask) * 0x4000;
 		break;
 	case 2:
-		m1->prg_bank[0] = prg_A18 * 0x4000;
-		m1->prg_bank[1] = prg_bank * 0x4000;
+		m1->prg_bank[0] = (prg_A18 & prg_mask) * 0x4000;
+		m1->prg_bank[1] = (prg_bank & prg_mask) * 0x4000;
 		break;
 	case 3:
-		m1->prg_bank[0] = prg_bank * 0x4000;
-		m1->prg_bank[1] = last_bank * 0x4000;
+		m1->prg_bank[0] = (prg_bank & prg_mask) * 0x4000;
+		m1->prg_bank[1] = (last_bank & prg_mask) * 0x4000;
 		break;
 	}
 
@@ -294,12 +310,12 @@ static void m1_update(struct _mapper_t *m)
 	 */
 	switch (m1->ctrl_reg.reg.bits.chr_mode) {
 	case 0:
-		m1->chr_bank[0] = (m1->chr0_reg & 0x1e) * 0x1000;
-		m1->chr_bank[1] = ((m1->chr0_reg & 0x1e) | 0x1) * 0x1000;
+		m1->chr_bank[0] = ((m1->chr0_reg & 0x1e) & chr_mask) * 0x1000;
+		m1->chr_bank[1] = (((m1->chr0_reg & 0x1e) | 0x1) & chr_mask) * 0x1000;
 		break;
 	case 1:
-		m1->chr_bank[0] = m1->chr0_reg * 0x1000;
-		m1->chr_bank[1] = m1->chr1_reg * 0x1000;
+		m1->chr_bank[0] = (m1->chr0_reg & chr_mask) * 0x1000;
+		m1->chr_bank[1] = (m1->chr1_reg & chr_mask) * 0x1000;
 		break;
 	}
 }
@@ -340,6 +356,7 @@ static int m1_mapper_init(struct _mapper_t *m, cartridge_t *c)
 
 	/* Reset values */
 	m1->shift_reg = 0x10;
+	m1->last_write_seen = 0;
 	m1->ctrl_reg.reg.raw = 0x0c;
 	m1->chr0_reg = 0;
 	m1->chr1_reg = 0;
@@ -377,7 +394,8 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 	cartridge_t *cartridge = m->cartridge;
 	struct _m1_mapper *m1 = (struct _m1_mapper *)m->data;
 	uint8_t write_done, reg_val;
-	uint64_t idx;
+	uint64_t idx, consecutive;
+	uint64_t now;
 
 	switch (op) {
 	case CMEM_WRITE:
@@ -389,6 +407,22 @@ uint8_t m1_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 					m1->prg_ram[idx] = value;
 			}
 		} else if (address >= 0x8000 && address <= 0xffff) {
+			/* The serial port ignores every write of a run of writes on
+			 * consecutive CPU cycles, keeping only the first, so the
+			 * register won't shift on a read-modify-write cycle of some
+			 * 6502 instructions.
+			 */
+			now = cpu_get_cycles();
+			if (m1->last_write_seen && (now - m1->last_write_cycle) <= 1)
+				consecutive = 1;
+			else
+				consecutive = 0;
+
+			m1->last_write_cycle = now;
+			m1->last_write_seen = 1;
+			if (consecutive)
+				break;
+
 			if ((value & 0x80)) {
 				/* Clear shift register */
 				m1->shift_reg = 0x10;
@@ -452,7 +486,7 @@ uint8_t m1_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 {
 	cartridge_t *cartridge = m->cartridge;
 	struct _m1_mapper *m1 = (struct _m1_mapper *)m->data;
-	uint32_t idx;
+	uint32_t idx = 0;
 
 	if (address >= 0 && address <= 0x0fff) {
 		idx = m1->chr_bank[0] + address;
