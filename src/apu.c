@@ -1037,18 +1037,17 @@ void apu_reg_write(uint16_t reg, uint8_t value)
 		break;
 
 	case REG_FRM_SEQ:
-		if ((value & 0x80)) {
-			apu.frm_seq.mode = 1;
-			apu.frm_seq.irq_inhibit = 1;
-		} else {
+		if ((value & 0x80) == 0)
 			apu.frm_seq.mode = 0;
-			if ((value & 0x40)) {
-				apu.frm_seq.irq_inhibit = 1;
-				apu.frm_seq.irq_flag = 0;
-				cpu_clear_irq();
-			} else {
-				apu.frm_seq.irq_inhibit = 0;
-			}
+		else
+			apu.frm_seq.mode = 1;
+
+		if (apu.frm_seq.mode || (value & 0x40)) {
+			apu.frm_seq.irq_inhibit = 1;
+			apu.frm_seq.irq_flag = 0;
+			cpu_clear_irq();
+		} else {
+			apu.frm_seq.irq_inhibit = 0;
 		}
 
 		if ((apu.clock & 0x1) == 0)
