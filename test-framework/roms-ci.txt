@@ -1,0 +1,13 @@
+# ROM list for the GitHub CI job.
+#
+# One ROM path per line. Blank lines and lines starting with '#' are ignored.
+# Relative paths resolve against this file's directory (test-framework/), so a
+# ROM at test-framework/roms/foo.nes is listed simply as:
+#
+#     roms/foo.nes
+#
+# Only add LICENSE-CLEAN ROMs (see roms/README.md). While this list is empty
+# the CI job does nothing and stays green.
+#
+# Example (uncomment once you add the file under roms/):
+# roms/example-homebrew.nes

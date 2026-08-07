@@ -1,0 +1,48 @@
+name: ROM smoke tests
+
+on:
+  pull_request:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+  push:
+    branches:
+      - "main"
+      - "[0-9]+.[0-9]+"
+
+jobs:
+  rom-tests:
+    name: run-roms
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      # The headless harness needs only a C toolchain -- no SDL, no X server.
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Build headless harness
+        run: make -C test-framework
+
+      - name: Run ROM tests
+        run: |
+          python3 test-framework/run_tests.py \
+            --rom-list test-framework/roms-ci.txt \
+            --baseline test-framework/baseline.json \
+            --json test-framework/results.json \
+            --junit test-framework/results.xml \
+            --github --no-color
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: rom-test-results
+          path: |
+            test-framework/results.json
+            test-framework/results.xml
+          if-no-files-found: ignore

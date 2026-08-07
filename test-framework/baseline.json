@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "generated": "",
+    "note": "Expected ROM verdicts for CI regression gating. Regenerate with: python3 run_tests.py --rom-list roms-ci.txt --baseline baseline.json --update-baseline"
+  },
+  "roms": {}
+}
