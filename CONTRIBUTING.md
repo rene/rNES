@@ -232,9 +232,9 @@ Guidelines:
 
 ## AI assisted code
 
-rNES was written in @rene's spare time, before the AI explosion, and therefore
-without any AI assistance. That is history, not a rule: **AI assisted code is
-acceptable and encouraged in rNES today.**
+rNES was written in [@rene](https://github.com/rene)'s spare time, before the AI
+explosion, and therefore without any AI assistance. That is history, not a rule:
+**AI assisted code is acceptable and encouraged in rNES today.**
 
 The one requirement is transparency. If you used an AI model to help write a
 change, say so clearly by adding a `Co-Authored-By:` line naming the model to
