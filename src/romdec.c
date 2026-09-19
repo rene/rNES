@@ -41,6 +41,120 @@
 #include <stdlib.h>
 
 /**
+ * A cartridge whose iNES header does not describe the board it was dumped
+ * from. Unlicensed titles are the usual offenders: the header was filled in
+ * by hand (or by a tool that guessed) long after the fact, and nothing in the
+ * image itself contradicts it, so the only way to tell is to recognise the
+ * dump. Entries are keyed by the CRC-32 of the image with the 16 byte header
+ * removed, which is the key the No-Intro and NesCartDB databases use.
+ */
+struct _rom_fixup {
+	/** CRC-32 of the ROM image, header excluded */
+	uint32_t crc;
+	/** Mapper the board really implements */
+	uint16_t mapper;
+	/** Real PRG ROM size in bytes */
+	uint64_t prg_size;
+	/** Real CHR ROM size in bytes */
+	uint64_t chr_size;
+	/** Real nametable arrangement */
+	enum _rom_mirroring mirroring;
+	/** Title of the dump, for the reader of this table */
+	const char *title;
+};
+
+/** Known bad headers, and what the cartridge behind them actually is */
+static const struct _rom_fixup rom_fixups[] = {
+	/* Headed as an MMC1 board with 32 KB of PRG ROM; it is really a Color
+	 * Dreams board carrying 64 KB. Color Dreams swaps the whole of
+	 * $8000-$ffff on a single write, so under MMC1 rules the bank swap never
+	 * happens: the game calls into its second bank, runs whatever bank 0
+	 * holds at that address instead, unbalances the stack and ends up in the
+	 * IRQ vector, which this game points at its own reset path. It reboots
+	 * itself a few frames in, forever, on a black screen.
+	 */
+	{0xcb53c523, 11, 0x10000, 0x8000, VERTICAL_MIRRORING,
+	 "King Neptune's Adventure (USA) (Unl)"},
+};
+
+/**
+ * Compute the CRC-32 (IEEE 802.3) of a memory block
+ * @param [in] data Data block
+ * @param [in] len Size of the block in bytes
+ * @return uint32_t CRC-32 of the block
+ */
+static uint32_t crc32_block(const uint8_t *data, size_t len)
+{
+	uint32_t crc = 0xffffffff;
+	size_t i;
+	int bit;
+
+	for (i = 0; i < len; i++) {
+		crc ^= data[i];
+		for (bit = 0; bit < 8; bit++)
+			crc = (crc >> 1) ^ ((crc & 1) ? 0xedb88320u : 0);
+	}
+
+	return ~crc;
+}
+
+/**
+ * Replace the header-derived geometry of a ROM known to be mislabelled.
+ * Nothing happens unless the image matches an entry of rom_fixups[] byte for
+ * byte, so a correctly headed dump is never second-guessed.
+ * @param [in,out] romf ROM struct, already filled in from its header
+ * @param [in] image ROM image, header included
+ * @param [in] size Size of the image in bytes
+ * @return const struct _rom_fixup* Applied entry, NULL if none matched
+ */
+static const struct _rom_fixup *
+apply_rom_fixup(rom_t *romf, const uint8_t *image, size_t size)
+{
+	size_t i, payload, needed;
+	uint32_t crc;
+
+	if (size <= sizeof(rom_header_t))
+		return NULL;
+
+	payload = size - sizeof(rom_header_t);
+	crc = crc32_block(image + sizeof(rom_header_t), payload);
+
+	for (i = 0; i < sizeof(rom_fixups) / sizeof(rom_fixups[0]); i++) {
+		const struct _rom_fixup *fixup = &rom_fixups[i];
+
+		if (fixup->crc != crc)
+			continue;
+
+		/* Belt and braces: never hand a mapper more memory than was read */
+		needed = fixup->prg_size + fixup->chr_size;
+		if (romf->trainer != NULL)
+			needed += 512;
+		if (needed > payload)
+			continue;
+
+		romf->mapper = fixup->mapper;
+		romf->prg_size = fixup->prg_size;
+		romf->chr_size = fixup->chr_size;
+		romf->mirroring = fixup->mirroring;
+		/* PRG ROM moved the end of the image, CHR ROM follows it */
+		romf->chr_rom = romf->prg_rom + romf->prg_size;
+
+		/* Correct the loaded header too, so that the nametable arrangement
+		 * reported by get_rom_mirroring() cannot disagree with the one the
+		 * mappers read back from the ROM struct.
+		 */
+		romf->header->flag6.nes.fourscreen =
+			(fixup->mirroring == FOUR_SCREEN) ? 1 : 0;
+		romf->header->flag6.nes.mirroring =
+			(fixup->mirroring == VERTICAL_MIRRORING) ? 1 : 0;
+
+		return fixup;
+	}
+
+	return NULL;
+}
+
+/**
  * Load ROM file
  * @param [in] pathname Pathname to the ROM file
  * @param [out] rom ROM struct
@@ -148,6 +262,11 @@ int load_rom(const char *pathname, rom_t **rom)
 					   ((romf->header->flag7.nes.mapper << 4) & 0xf0) |
 					   (romf->header->flag6.nes.mapper & 0xf);
 	}
+
+	/* Last word goes to the fixup table, for the handful of dumps whose
+	 * header describes a cartridge that never existed.
+	 */
+	apply_rom_fixup(romf, rom_file, (size_t)ret);
 
 	*rom = romf;
 	return 0;
