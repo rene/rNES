@@ -116,6 +116,15 @@ static int drain_started;
  * semaphore once the ring is full. Nothing consumes audio in headless mode,
  * so without a drainer the emulation loop would deadlock mid-frame. This
  * thread mimics the sound card callback and throws the samples away.
+ *
+ * Lifetime: the loop never returns and the thread is never joined -- it is
+ * parked inside rbuff_get() when the run ends, so joining it would hang.
+ * rnes_headless.c therefore finishes with _exit(), which on POSIX tears down
+ * every thread at once, before any APU state is released. That pairing is
+ * load-bearing: a port that lets main() return normally, or that unwinds the
+ * APU first, would leave this thread reading freed state. Either keep the
+ * _exit(), or give the loop a cancellation point and pthread_cancel() it
+ * before APU teardown.
  */
 static void *audio_drain_loop(void *arg)
 {

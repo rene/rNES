@@ -20,6 +20,9 @@ class RunConfig:
     buttons: Optional[str] = None  # e.g. "start,a,select"; None = harness default
     freeze_frames: Optional[int] = None  # >frames enables adaptive freeze confirm
     blank_frames: Optional[int] = 900  # >frames confirms a blank screen is dead
+    # Power-on CPU RAM byte. None = the harness default (0x00). Fixed rather
+    # than left to malloc() so a verdict is reproducible; see --ram-fill.
+    ram_fill: Optional[int] = None
 
 
 @dataclass
@@ -57,6 +60,8 @@ def run_rom(rom_path: str, key: str, cfg: RunConfig) -> RunResult:
         cmd += ["--freeze-frames", str(cfg.freeze_frames)]
     if cfg.blank_frames is not None:
         cmd += ["--blank-frames", str(cfg.blank_frames)]
+    if cfg.ram_fill is not None:
+        cmd += ["--ram-fill", str(cfg.ram_fill)]
     cmd.append(rom_path)
     try:
         proc = subprocess.run(
@@ -97,14 +102,24 @@ def make_skip_result(rom_path: str, key: str, reason: str,
 
 
 def _parse_report(stdout: str) -> Optional[dict]:
-    """The harness prints exactly one JSON object; parse the last JSON line."""
+    """Return the harness's JSON report, or None if it never printed one.
+
+    The harness prints exactly one JSON object, but the emulator core shares
+    its stdout, so a trace line that merely looks like an object must not be
+    mistaken for the report. Scan backwards for the last line that parses as
+    a JSON object *and* carries the harness's ``status`` key, which both the
+    full report and the early ``emit_status()`` exits always emit.
+    """
     for line in reversed(stdout.strip().splitlines()):
         line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError:
-                return None
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "status" in parsed:
+            return parsed
     return None
 
 

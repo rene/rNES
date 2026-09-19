@@ -42,6 +42,35 @@ Two pieces:
 make -C test-framework      # produces test-framework/rnes_headless
 ```
 
+### Extra checking
+
+Two optional targets keep the test infrastructure held to the same standard
+as the code it tests. Both are off the default path so a 790-ROM sweep stays
+fast.
+
+```sh
+make -C test-framework strict     # compile harness/ with -Wall -Wextra -Werror
+make -C test-framework sanitize   # rebuild the harness under ASan + UBSan
+```
+
+`strict` is syntax-only and takes under a second, so CI runs it on every
+push. It is scoped to `harness/` deliberately: the emulator core still has
+warnings of its own (`-Wmaybe-uninitialized` in `ppu.c`), and failing this
+check on those would make it useless as a gate on new code.
+
+`sanitize` produces the same binary with the same CLI, roughly 2–3x slower.
+It is worth pointing at a handful of ROMs — especially after a mapper or
+timing change — to catch memory and UB errors that a PASS/FAIL verdict
+cannot see:
+
+```sh
+make -C test-framework sanitize
+./test-framework/rnes_headless --frames 600 some-rom.nes
+```
+
+Remember to `make -C test-framework` again afterwards to get the fast build
+back before a full sweep.
+
 ## Running locally
 
 Point it at any list of ROM paths (one per line; `#` comments allowed). This is
@@ -140,6 +169,34 @@ escapes a loop, passes).
 > anything is drawn. The extension is granted only while the CPU is still
 > executing varied code — a ROM sitting in a tight loop is already dead and
 > fails immediately, so the extra time is spent on a handful of ROMs at most.
+
+## Determinism
+
+A baseline is only worth having if the same ROM produces the same verdict
+every time, so the harness pins everything that would otherwise vary between
+runs.
+
+The one that actually bites is power-on RAM. `sbus_init()` gets the 2 KiB of
+CPU RAM from `malloc()` and never initialises it, so the emulator starts with
+whatever the heap happens to hold. Games that read a location before writing
+it then take different paths from run to run — Joust swung between 1.3M and
+5.7M instructions over the same 300 frames and flipped PASS/FAIL between two
+otherwise identical sweeps. The harness therefore fills CPU RAM with a fixed
+byte (`0x00`) before reset.
+
+That is a harness policy, not a claim about hardware: a real NES powers on
+with arbitrary RAM, and the emulator proper is left alone. To find out whether
+a title genuinely depends on its power-on state, re-run it under a different
+fill:
+
+```sh
+./run_tests.py --rom-list roms.txt --ram-fill 0xff
+```
+
+A ROM whose verdict changes with `--ram-fill` is reading uninitialised RAM;
+that is worth knowing, and is a property of the game (or of a mapper bug), not
+noise in the test suite. The value used is recorded as `ram_fill` in the JSON
+report, so a result always says which power-on state produced it.
 
 ## Baseline & regression gating
 
