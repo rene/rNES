@@ -43,6 +43,21 @@
 #define DEF_WARMUP 60	 /* skip the first ~1 s (boot / PPU warm-up) */
 #define DEF_INTERVAL 10	 /* sample the screen/CPU every N frames */
 #define DEF_BUTTONS "start,a" /* buttons to mash to advance title/menu screens */
+
+/*
+ * Byte written over the 2 KiB of CPU RAM before reset.
+ *
+ * sbus_init() obtains cpu_ram from malloc() and leaves it uninitialized, so
+ * without this the emulator powers on with whatever the heap happened to
+ * hold. Real hardware is indeed arbitrary at power-on, but a regression
+ * suite is not allowed to be: games that read RAM before writing it take
+ * different paths per run. Joust, for one, swung between 1.3M and 5.7M
+ * instructions over 300 frames and flipped PASS/FAIL between identical
+ * sweeps. Filling with a fixed byte makes a verdict reproducible, which is
+ * the whole point of a baseline. --ram-fill overrides it, so a title can be
+ * re-run under a different power-on state to see if it is sensitive to one.
+ */
+#define DEF_RAM_FILL 0x00
 #define DEF_BLANK_FRAMES 900 /* ~15 s: how long a blank screen gets to draw */
 #define INPUT_SLOT 4	 /* frames per press / per release slot */
 #define MAX_BUTTONS 8
@@ -115,7 +130,15 @@ static int sample_is_blank(const struct frame_sample *s)
 }
 
 /* Open-addressing color histogram. NES output has well under 512 distinct
- * colors per frame, so a 4096-slot table never gets crowded. */
+ * colors per frame, so a 4096-slot table never gets crowded.
+ *
+ * ht_used is the sole validity bit: a slot's color and count are meaningless
+ * -- and are never read -- unless ht_used[idx] is set. That is why clearing
+ * ht_used alone is enough to reset the table between frames; ht_color and
+ * ht_count are always written before the bit is set. Do not "also clear" them
+ * for tidiness: it would cost a memset per frame and hide a stale-read bug
+ * behind plausible-looking zeroes instead of letting it show up.
+ */
 #define HT_SIZE 4096
 static uint32_t ht_color[HT_SIZE];
 static uint32_t ht_count[HT_SIZE];
@@ -261,7 +284,7 @@ static void usage(const char *argv0)
 	fprintf(stderr,
 			"Usage: %s [--frames N] [--warmup N] [--interval N] "
 			"[--freeze-frames N] [--blank-frames N] [--buttons list] "
-			"[--no-input] [--json] <rom_file>\n"
+			"[--ram-fill BYTE] [--no-input] [--json] <rom_file>\n"
 			"  --freeze-frames N  if the screen stays static, keep running up "
 			"to N frames\n"
 			"                     to confirm it is really frozen (0 = off)\n"
@@ -270,8 +293,11 @@ static void usage(const char *argv0)
 			"                     to confirm nothing is ever drawn "
 			"(default %d, 0 = off)\n"
 			"  --buttons list     comma list from "
-			"start,a,b,select,up,down,left,right (default: %s)\n",
-			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS);
+			"start,a,b,select,up,down,left,right (default: %s)\n"
+			"  --ram-fill BYTE    power-on value for the 2 KiB of CPU RAM; keeps "
+			"runs\n"
+			"                     reproducible (default 0x%02x)\n",
+			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS, DEF_RAM_FILL);
 }
 
 /* Map a button name to its raw controller_reg_t byte (0 if unknown). */
@@ -298,7 +324,14 @@ static uint8_t button_mask(const char *name)
 	return cr.raw;
 }
 
-/* Parse "start,a,select" into an array of raw button masks. Returns count. */
+/*
+ * Parse "start,a,select" into an array of raw button masks. Returns the
+ * number of masks written, or -1 if the list cannot be honoured exactly:
+ * too long for the local buffer, holding an unknown name, or naming more
+ * buttons than `max`. Every one of those would otherwise degrade into a
+ * silently different input script (a truncated "right" -> "righ" is simply
+ * dropped), so the caller turns them into a usage error instead.
+ */
 static int parse_buttons(const char *list, uint8_t *masks, int max)
 {
 	char buf[64];
@@ -306,13 +339,14 @@ static int parse_buttons(const char *list, uint8_t *masks, int max)
 	const char *tok;
 	int n = 0;
 
-	strncpy(buf, list, sizeof(buf) - 1);
-	buf[sizeof(buf) - 1] = '\0';
-	for (tok = strtok_r(buf, ",", &save); tok && n < max;
+	if (snprintf(buf, sizeof(buf), "%s", list) >= (int)sizeof(buf))
+		return -1; /* truncated: would split a name mid-token */
+	for (tok = strtok_r(buf, ",", &save); tok;
 		 tok = strtok_r(NULL, ",", &save)) {
 		uint8_t m = button_mask(tok);
-		if (m)
-			masks[n++] = m;
+		if (m == 0 || n >= max)
+			return -1;
+		masks[n++] = m;
 	}
 	return n;
 }
@@ -339,6 +373,17 @@ static uint8_t sched_buttons(int frame, const uint8_t *masks, int n)
 	return (idx % 2 == 0) ? masks[idx / 2] : 0;
 }
 
+/* Put the 2 KiB of CPU RAM into a known state. sbus_write() is the only
+ * public route to it; everything below 0x2000 mirrors into cpu_ram, so the
+ * first 0x800 addresses cover the lot. */
+static void fill_cpu_ram(uint8_t value)
+{
+	uint16_t a;
+
+	for (a = 0; a < 0x0800; a++)
+		sbus_write(a, value);
+}
+
 /* ------------------------------------------------------------------ */
 /* main                                                               */
 /* ------------------------------------------------------------------ */
@@ -363,6 +408,7 @@ int main(int argc, char *argv[])
 	int content_seen = 0, blank_extended = 0;
 	uint64_t base_hash = 0;
 	const char *buttons_arg = DEF_BUTTONS;
+	int ram_fill = DEF_RAM_FILL;
 	uint8_t btn_masks[MAX_BUTTONS];
 	int n_buttons = 0;
 	rom_t *rom = NULL;
@@ -384,6 +430,8 @@ int main(int argc, char *argv[])
 			blank_frames = atoi(argv[++i]);
 		} else if (!strcmp(argv[i], "--buttons") && i + 1 < argc) {
 			buttons_arg = argv[++i];
+		} else if (!strcmp(argv[i], "--ram-fill") && i + 1 < argc) {
+			ram_fill = (int)strtol(argv[++i], NULL, 0) & 0xff;
 		} else if (!strcmp(argv[i], "--no-input")) {
 			inject_input = 0;
 		} else if (!strcmp(argv[i], "--json")) {
@@ -408,6 +456,18 @@ int main(int argc, char *argv[])
 		interval = 1;
 	if (warmup < 0)
 		warmup = 0;
+
+	/* Validate --buttons up front: a list we cannot honour exactly is a
+	 * usage error, not a silently different (or empty) input script. */
+	n_buttons = parse_buttons(buttons_arg, btn_masks, MAX_BUTTONS);
+	if (n_buttons < 0) {
+		fprintf(stderr, "%s: bad --buttons list: \"%s\"\n", argv[0],
+				buttons_arg);
+		usage(argv[0]);
+		return EXIT_USAGE;
+	}
+	if (n_buttons == 0)
+		inject_input = 0; /* an empty list: nothing to press */
 
 	/* Load the ROM header first: read the mapper and gate on it *before*
 	 * cartridge_load() (which does an unbounded mappers[] index). */
@@ -447,6 +507,7 @@ int main(int argc, char *argv[])
 	/* Initialize modules (same order as the real interface) */
 	sbus_init();
 	sbus_set_cartridge(cart);
+	fill_cpu_ram((uint8_t)ram_fill); /* deterministic power-on RAM */
 	cpu_init();
 	ppu_init();
 	apu_init();
@@ -468,11 +529,6 @@ int main(int argc, char *argv[])
 		return EXIT_LOADERR;
 	}
 
-	/* Precompute the raw controller bytes for the scripted buttons. */
-	n_buttons = parse_buttons(buttons_arg, btn_masks, MAX_BUTTONS);
-	if (inject_input && n_buttons == 0)
-		inject_input = 0; /* nothing valid to press */
-
 	/* A generous per-frame tick cap: an NTSC frame is ~89342 PPU cycles.
 	 * If we blow way past that without seeing vblank, the emulator itself
 	 * is stuck (not the game) -> report a hang. */
@@ -481,7 +537,15 @@ int main(int argc, char *argv[])
 	/* The loop runs `total_frames` (the base observation), but may grow to
 	 * `freeze_frames` when the screen looks statically stuck: many working
 	 * games hold a colourful title screen for well over 5 s, so we keep
-	 * running to see whether it ever animates before calling it "frozen". */
+	 * running to see whether it ever animates before calling it "frozen".
+	 *
+	 * Both adaptive extensions below raise `limit` under a `> limit` guard, so
+	 * it is monotonic -- neither can shorten a window the other opened, and
+	 * they compose in either order. (They are in fact mutually exclusive on a
+	 * given sample: the freeze extension requires a non-blank frame, which has
+	 * already set content_seen, which is exactly what the blank extension
+	 * requires to be unset. The guard is what makes that a safety net rather
+	 * than a load-bearing assumption.) */
 	limit = total_frames;
 
 	for (frames_run = 0; frames_run < limit; frames_run++) {
@@ -494,9 +558,12 @@ int main(int argc, char *argv[])
 
 		uint64_t frame_ticks = run_one_frame(tick_cap);
 		if (frame_ticks == 0) {
-			/* Emulator-level hang: no vblank within the cap */
+			/* Emulator-level hang: no vblank within the cap. `break` skips
+			 * the loop's own increment, so bump frames_run by hand to turn
+			 * the 0-based index of the frame we just attempted into the
+			 * 1-based count the JSON report expects. */
 			status_ok = 0;
-			frames_run++; /* count the attempted frame */
+			frames_run++;
 			break;
 		}
 
@@ -581,6 +648,7 @@ int main(int argc, char *argv[])
 	printf(",\"screen_changed\":%s", screen_changed ? "true" : "false");
 	printf(",\"warmup\":%d", warmup);
 	printf(",\"interval\":%d", interval);
+	printf(",\"ram_fill\":%d", ram_fill);
 	printf(",\"input_injected\":%s", inject_input ? "true" : "false");
 	if (inject_input) {
 		printf(",\"input_buttons\":");

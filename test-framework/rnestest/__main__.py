@@ -63,6 +63,12 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="comma list of buttons to mash "
                         "(start,a,b,select,up,down,left,right); "
                         "default: start,a")
+    p.add_argument("--ram-fill", type=lambda v: int(v, 0), default=None,
+                   help="byte the 2 KiB of CPU RAM powers on with (default "
+                        "0x00). The emulator itself leaves it to malloc(); "
+                        "the harness pins it so verdicts are reproducible. "
+                        "Re-run a title with a different value to see whether "
+                        "it depends on power-on RAM")
 
     # Detection thresholds
     p.add_argument("--blank-colors", type=int, default=1,
@@ -152,6 +158,7 @@ def main(argv=None) -> int:
         # Only ask the harness to run long when we'll actually judge freezes.
         freeze_frames=(args.freeze_frames if args.detect_freeze else None),
         blank_frames=args.blank_frames,
+        ram_fill=args.ram_fill,
     )
 
     if not os.path.isfile(args.harness):
