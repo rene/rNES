@@ -7,7 +7,7 @@ rNES it's yet another NES emulator which has as it main goals:
 - Low memory footprint
 - High portability across platforms
 
-Currently rNES implements mappers 0, 1, 2, 3, 4 and 7, supporting thousands
+Currently rNES implements mappers 0, 1, 2, 3, 4, 7 and 11, supporting thousands
 of NES games.
 
 ![rNES](/docs/imgs/rNES_games.png)
