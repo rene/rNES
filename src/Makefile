@@ -18,6 +18,7 @@ sources = cpu/cpu650x.c sbus.c romdec.c palette.c \
 		  mappers/m3_CNROM.c \
 		  mappers/m4_MMC3.c \
 		  mappers/m7_AxROM.c \
+		  mappers/m11_ColorDreams.c \
 		  hal/fileops.c ringbuffer.c \
 		  interface/posix/rNES.c \
 
