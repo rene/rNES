@@ -1,9 +1,15 @@
 """Turn a harness :class:`RunResult` into a PASS / FAIL / SKIP verdict.
 
-Heuristics, in priority order (first match wins). All post-warmup *samples*
-are considered; a signal only fails the ROM if it holds for the whole window,
-which keeps false positives low (a screen that animates even once, or a CPU
-that ever escapes a tight loop, passes).
+Purpose-built test ROMs (blargg's suites, nestest) are judged first and on
+their own terms: run under ``--test``, the harness reports the verdict the
+ROM itself published, and none of the heuristics below apply to them. They
+would in fact get it backwards -- a blargg test that has finished parks the
+CPU in a `jmp *`, which "CPU stuck in tight loop" reads as a hang.
+
+Everything else is judged by heuristics, in priority order (first match
+wins). All post-warmup *samples* are considered; a signal only fails the ROM
+if it holds for the whole window, which keeps false positives low (a screen
+that animates even once, or a CPU that ever escapes a tight loop, passes).
 
 Definitive failures (very low false-positive rate):
   - crashed (killed by a signal)
@@ -37,6 +43,11 @@ PASS = "PASS"
 FAIL = "FAIL"
 SKIP = "SKIP"
 
+# blargg's summary runs to a few hundred characters; a CI annotation and a
+# console line only have room for the part that says what went wrong, which
+# the ROM puts first.
+REASON_MAX = 220
+
 
 @dataclass
 class Thresholds:
@@ -54,6 +65,42 @@ class Verdict:
     verdict: str          # PASS | FAIL | SKIP
     reason: str
     category: str         # short machine-friendly tag
+
+
+def _clip(text: str) -> str:
+    text = " ".join(text.split())
+    if len(text) <= REASON_MAX:
+        return text
+    return text[:REASON_MAX - 1].rstrip() + "\u2026"
+
+
+def testrom_verdict(report: dict) -> Optional[Verdict]:
+    """Verdict published by the ROM itself, or None if it published none.
+
+    Only set when the harness ran with ``--test`` *and* the ROM actually
+    reported: ``--test auto`` on a ROM with no blargg signature leaves the
+    field absent, and the caller falls back to the screen heuristics.
+    """
+    proto = report.get("test_protocol")
+    if not proto:
+        return None
+
+    text = (report.get("test_text") or "").strip()
+    detail = f": {text}" if text else ""
+
+    if not report.get("test_done"):
+        # Stopped somewhere in the middle: the frame budget ran out, the CPU
+        # jammed, or the emulator stopped producing frames. Whatever the ROM
+        # had written by then is a partial result, not a verdict.
+        return Verdict(FAIL, _clip(f"{proto} test did not finish{detail}"),
+                       "test-incomplete")
+
+    code = report.get("test_code")
+    if code == 0:
+        return Verdict(PASS, _clip(text or f"{proto} test passed"),
+                       "test-pass")
+    return Verdict(FAIL, _clip(f"{proto} test failed (code {code}){detail}"),
+                   "test-fail")
 
 
 def analyze(res: RunResult, th: Optional[Thresholds] = None) -> Verdict:
@@ -91,8 +138,16 @@ def analyze(res: RunResult, th: Optional[Thresholds] = None) -> Verdict:
         return Verdict(FAIL, f"unexpected status '{status}'", "bad-status")
 
     # --- Emulation-level failures ---------------------------------------
+    # Ahead of the ROM's own verdict: a jammed CPU means the test stopped
+    # early, so whatever it had written down is not the answer it meant to
+    # give -- and "JAM/KIL opcode" says far more than "did not finish".
     if report.get("cpu_jammed"):
         return Verdict(FAIL, "CPU jammed (JAM/KIL opcode)", "cpu-jam")
+
+    # --- A test ROM's own verdict ----------------------------------------
+    tv = testrom_verdict(report)
+    if tv is not None:
+        return tv
 
     samples = report.get("samples") or []
     if not samples:

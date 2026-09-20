@@ -100,6 +100,130 @@ static int popcount_pc_seen(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Test-ROM result protocols                                          */
+/* ------------------------------------------------------------------ */
+/*
+ * Purpose-built test ROMs do not have to be judged by how their screen
+ * looks: they say outright whether they passed. Two conventions cover the
+ * suites this framework runs, and both are far more precise than any
+ * heuristic -- a test that finishes parks the CPU in a `jmp *`, which the
+ * screen/CPU analysis would otherwise read as a hang.
+ *
+ * blargg (instr_test-v5, instr_misc, ppu_vbl_nmi, cpu_interrupts_v2, ...)
+ *   Once running, the ROM writes a three-byte signature to $6001-$6003 and
+ *   keeps a status byte at $6000: $80 while the test runs, $81 when it wants
+ *   a soft reset, and the final result code otherwise (0 = passed). A
+ *   NUL-terminated ASCII summary follows at $6004.
+ *
+ * nestest (kevtris)
+ *   Entered at $C000 it runs every test unattended and leaves its result in
+ *   two zero-page bytes, $02 and $03, both 0 when everything passed. There
+ *   is no signature to watch for, so this mode is requested explicitly.
+ *
+ * Polling is non-intrusive: sbus_read() serves $0000-$07FF from CPU RAM and
+ * $6000-$7FFF from the cartridge's PRG-RAM, neither of which has read side
+ * effects, so looking every frame cannot disturb what is being measured.
+ */
+enum test_mode {
+	TEST_OFF = 0,	/* judge by screen/CPU heuristics alone (default) */
+	TEST_AUTO,		/* watch for blargg's $6000 report */
+	TEST_NESTEST	/* enter nestest at $C000, read its $02/$03 result */
+};
+
+#define BLARGG_STATUS 0x6000
+#define BLARGG_TEXT (BLARGG_STATUS + 4)
+#define BLARGG_TEXT_END 0x7fff	/* last PRG-RAM address; never read past it */
+#define BLARGG_RUNNING 0x80
+#define BLARGG_NEED_RESET 0x81
+#define BLARGG_TEXT_MAX 512
+/* $81 asks for a reset "after at least 100 ms"; 8 frames is ~133 ms. */
+#define BLARGG_RESET_DELAY 8
+/* A ROM that keeps asking for resets is stuck in a loop, not making
+ * progress. The reset-driven suites need a handful, never dozens. */
+#define BLARGG_MAX_RESETS 8
+#define NESTEST_ENTRY 0xc000
+
+/* True once the ROM has written blargg's $DE $B0 $61 signature. */
+static int blargg_signature_present(void)
+{
+	return sbus_read(BLARGG_STATUS + 1) == 0xde &&
+		   sbus_read(BLARGG_STATUS + 2) == 0xb0 &&
+		   sbus_read(BLARGG_STATUS + 3) == 0x61;
+}
+
+/*
+ * Copy the NUL-terminated summary at $6004 out of PRG-RAM, flattened into
+ * something a JSON report and a CI annotation can carry on one line.
+ *
+ * The report spans several lines and is decorated with ANSI colour escapes
+ * (ESC '[' ... final byte), which would otherwise show up verbatim as
+ * "[0;37mTEST: ..." in every failure message. Escape sequences are dropped
+ * whole; newlines and any other control character become a space, and runs
+ * of spaces collapse. Anything non-ASCII means we are reading uninitialized
+ * RAM rather than a report, so it is treated the same way.
+ */
+static void blargg_read_text(char *buf, size_t max)
+{
+	/* Wider than the address it holds, so walking off the end of PRG-RAM
+	 * stops the loop instead of wrapping to $0000 and reading the PPU and
+	 * APU ports -- where a read is not free ($2002 clears the vblank flag,
+	 * $2007 steps the VRAM address). */
+	uint32_t src = BLARGG_TEXT;
+	size_t n = 0;
+	int space = 1;	/* so leading whitespace is dropped too */
+	uint8_t c = 0;
+
+	while (n + 1 < max && src <= BLARGG_TEXT_END) {
+		c = sbus_read((uint16_t)src++);
+		if (c == 0)
+			break;
+
+		if (c == 0x1b) {
+			/* ESC [ <params> <final byte in 0x40-0x7e>: dropped whole. */
+			if (src > BLARGG_TEXT_END || sbus_read((uint16_t)src) != '[')
+				continue;
+			src++;
+			while (src <= BLARGG_TEXT_END) {
+				c = sbus_read((uint16_t)src++);
+				if (c == 0 || (c >= 0x40 && c <= 0x7e))
+					break;
+			}
+			if (c == 0)
+				break;
+			continue;
+		}
+
+		if (c < 0x20 || c >= 0x7f || c == ' ') {
+			space = 1;
+			continue;
+		}
+		if (space && n > 0)
+			buf[n++] = ' ';
+		space = 0;
+		if (n + 1 < max)
+			buf[n++] = (char)c;
+	}
+	buf[n] = '\0';
+}
+
+/*
+ * Point the reset vector at `entry` by patching the PRG image held in
+ * memory -- never the file on disk, which stays byte-for-byte upstream.
+ * $FFFC-$FFFD live in the 16 KiB bank mapped at $C000, which on the NROM
+ * boards this is used with (nestest among them) is the tail of PRG-ROM.
+ */
+static int patch_reset_vector(cartridge_t *cart, uint16_t entry)
+{
+	uint8_t *prg = cart->rom->prg_rom;
+
+	if (prg == NULL || cart->rom->prg_size < 4)
+		return -1;
+	prg[cart->rom->prg_size - 4] = (uint8_t)(entry & 0xff);
+	prg[cart->rom->prg_size - 3] = (uint8_t)(entry >> 8);
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Per-frame framebuffer analysis                                     */
 /* ------------------------------------------------------------------ */
 
@@ -284,7 +408,8 @@ static void usage(const char *argv0)
 	fprintf(stderr,
 			"Usage: %s [--frames N] [--warmup N] [--interval N] "
 			"[--freeze-frames N] [--blank-frames N] [--buttons list] "
-			"[--ram-fill BYTE] [--no-input] [--json] <rom_file>\n"
+			"[--ram-fill BYTE] [--test MODE] [--no-input] [--json] "
+			"<rom_file>\n"
 			"  --freeze-frames N  if the screen stays static, keep running up "
 			"to N frames\n"
 			"                     to confirm it is really frozen (0 = off)\n"
@@ -296,7 +421,12 @@ static void usage(const char *argv0)
 			"start,a,b,select,up,down,left,right (default: %s)\n"
 			"  --ram-fill BYTE    power-on value for the 2 KiB of CPU RAM; keeps "
 			"runs\n"
-			"                     reproducible (default 0x%02x)\n",
+			"                     reproducible (default 0x%02x)\n"
+			"  --test MODE        read a test ROM's own verdict instead of "
+			"guessing from\n"
+			"                     the screen: off (default), auto (blargg's "
+			"$6000 report),\n"
+			"                     nestest (enter at $C000, read $02/$03)\n",
 			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS, DEF_RAM_FILL);
 }
 
@@ -415,6 +545,13 @@ int main(int argc, char *argv[])
 	cartridge_t *cart = NULL;
 	rom_video_t video;
 	int ret;
+	enum test_mode test_mode = TEST_OFF;
+	const char *test_proto = NULL;	/* protocol that produced a result */
+	int test_code = 0, test_done = 0, test_resets = 0;
+	int reset_pending = 0;			/* frames left before a soft reset */
+	char test_text[BLARGG_TEXT_MAX];
+
+	test_text[0] = '\0';
 
 	/* Parse command line */
 	for (i = 1; i < argc; i++) {
@@ -432,6 +569,20 @@ int main(int argc, char *argv[])
 			buttons_arg = argv[++i];
 		} else if (!strcmp(argv[i], "--ram-fill") && i + 1 < argc) {
 			ram_fill = (int)strtol(argv[++i], NULL, 0) & 0xff;
+		} else if (!strcmp(argv[i], "--test") && i + 1 < argc) {
+			const char *mode = argv[++i];
+			if (!strcmp(mode, "off"))
+				test_mode = TEST_OFF;
+			else if (!strcmp(mode, "auto") || !strcmp(mode, "blargg"))
+				test_mode = TEST_AUTO;
+			else if (!strcmp(mode, "nestest"))
+				test_mode = TEST_NESTEST;
+			else {
+				fprintf(stderr, "%s: bad --test mode: \"%s\"\n", argv[0],
+						mode);
+				usage(argv[0]);
+				return EXIT_USAGE;
+			}
 		} else if (!strcmp(argv[i], "--no-input")) {
 			inject_input = 0;
 		} else if (!strcmp(argv[i], "--json")) {
@@ -507,6 +658,16 @@ int main(int argc, char *argv[])
 	/* Initialize modules (same order as the real interface) */
 	sbus_init();
 	sbus_set_cartridge(cart);
+
+	/* nestest's unattended mode is entered at $C000 rather than at the
+	 * ROM's own reset vector, so the vector has to be redirected before
+	 * cpu_reset() reads it. */
+	if (test_mode == TEST_NESTEST &&
+		patch_reset_vector(cart, NESTEST_ENTRY) < 0) {
+		emit_status(rom_path, "error", "cannot_patch_reset_vector", mapper);
+		return EXIT_LOADERR;
+	}
+
 	fill_cpu_ram((uint8_t)ram_fill); /* deterministic power-on RAM */
 	cpu_init();
 	ppu_init();
@@ -570,6 +731,36 @@ int main(int argc, char *argv[])
 		if (ppu.PPUMASK.reg.show_background || ppu.PPUMASK.reg.show_sprites)
 			rendering_ever = 1;
 
+		/* Has the test reported in yet? */
+		if (test_mode == TEST_AUTO) {
+			if (reset_pending > 0) {
+				/* Serve a pending $81: a soft reset touches CPU, PPU and
+				 * APU only -- CPU RAM and PRG-RAM keep their contents,
+				 * which is exactly where the test's state lives. */
+				if (--reset_pending == 0) {
+					cpu_reset();
+					ppu_reset();
+					apu_reset();
+				}
+			} else if (blargg_signature_present()) {
+				uint8_t st = sbus_read(BLARGG_STATUS);
+
+				test_proto = "blargg";
+				if (st == BLARGG_RUNNING) {
+					/* still working */
+				} else if (st == BLARGG_NEED_RESET) {
+					if (test_resets < BLARGG_MAX_RESETS) {
+						reset_pending = BLARGG_RESET_DELAY;
+						test_resets++;
+					}
+				} else {
+					test_code = st;
+					test_done = 1;
+					blargg_read_text(test_text, sizeof(test_text));
+				}
+			}
+		}
+
 		/* Sample after warm-up, every `interval` frames */
 		if (frames_run + 1 > warmup && ((frames_run + 1) % interval) == 0 &&
 			nsamples < MAX_SAMPLES) {
@@ -625,12 +816,44 @@ int main(int argc, char *argv[])
 		}
 		prev_instr = instr_count;
 
+		/* A test ROM that has published its verdict has nothing left to
+		 * say; the `frames_run++` turns this frame's 0-based index into
+		 * the 1-based count the JSON report carries. */
+		if (test_done) {
+			frames_run++;
+			break;
+		}
+
 		/* Once past the base run, stop as soon as the question that kept us
 		 * running is answered: the screen animates, and -- when we extended
 		 * to wait out a blank screen -- something has actually been drawn. */
 		if (frames_run + 1 >= total_frames && screen_changed &&
 			(!blank_extended || content_seen))
 			break;
+	}
+
+	/*
+	 * nestest reports through zero page instead of a signature, so its
+	 * result is collected once the run is over. The unattended sweep takes
+	 * about 27,000 cycles -- less than one NTSC frame -- and then falls
+	 * through into the ROM's interactive menu, which leaves $02/$03 alone;
+	 * reading them at the end of the run is therefore the same as reading
+	 * them the moment the sweep finished.
+	 *
+	 * Two bytes of zero only mean "passed" if the sweep actually ran to the
+	 * end. Nothing in the ROM announces that, so the run itself has to
+	 * vouch for it: a CPU that jammed or an emulator that stopped producing
+	 * frames stopped somewhere in the middle, and every test after that
+	 * point simply never wrote its code.
+	 */
+	if (test_mode == TEST_NESTEST) {
+		int lo = sbus_read(0x0002);
+		int hi = sbus_read(0x0003);
+
+		test_proto = "nestest";
+		test_code = (hi << 8) | lo;
+		test_done = status_ok && !cpu_jammed;
+		snprintf(test_text, sizeof(test_text), "$02=%02x $03=%02x", lo, hi);
 	}
 
 	/* -------------------------------------------------------------- */
@@ -655,6 +878,16 @@ int main(int argc, char *argv[])
 		json_puts_escaped(buttons_arg);
 	}
 	printf(",\"cpu_jammed\":%s", cpu_jammed ? "true" : "false");
+	if (test_proto != NULL) {
+		printf(",\"test_protocol\":");
+		json_puts_escaped(test_proto);
+		printf(",\"test_done\":%s", test_done ? "true" : "false");
+		if (test_done)
+			printf(",\"test_code\":%d", test_code);
+		printf(",\"test_resets\":%d", test_resets);
+		printf(",\"test_text\":");
+		json_puts_escaped(test_text);
+	}
 	printf(",\"total_instructions\":%lu", instr_count);
 	printf(",\"rendering_ever_enabled\":%s", rendering_ever ? "true" : "false");
 	printf(",\"samples\":[");

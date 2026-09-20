@@ -46,6 +46,26 @@ jobs:
             --junit test-framework/results.xml \
             --github --no-color
 
+      # blargg's NES test suites and nestest are not stored in this repository
+      # (neither carries a licence -- see test-framework/roms/README.md). They
+      # are downloaded from a pinned upstream commit and checked against the
+      # SHA-256 of every file in testroms.json, so the bytes CI runs are the
+      # bytes the baseline was recorded from.
+      - name: Cache test ROMs
+        uses: actions/cache@v6.1.0
+        with:
+          path: test-framework/roms/external
+          key: testroms-${{ hashFiles('test-framework/testroms.json') }}
+
+      # Unlike the smoke sweep above, these ROMs report their own verdict;
+      # `make testroms` carries the flags that reads it (see the Makefile).
+      - name: Run test ROMs (blargg + nestest)
+        run: |
+          make -C test-framework testroms TESTROM_EXTRA="\
+            --json testroms-results.json \
+            --junit testroms-results.xml \
+            --github --no-color"
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7.0.0
@@ -54,4 +74,6 @@ jobs:
           path: |
             test-framework/results.json
             test-framework/results.xml
+            test-framework/testroms-results.json
+            test-framework/testroms-results.xml
           if-no-files-found: ignore

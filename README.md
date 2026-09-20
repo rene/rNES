@@ -153,6 +153,33 @@ Note that no commercial ROM is (or should ever be) committed to the repository,
 so the list used by CI only contains license-clean ROMs. Point the framework at
 your own local collection when testing a change.
 
+## Test ROMs
+
+Alongside the game sweep, CI runs the NESdev test suites — blargg's CPU, PPU
+and APU tests and kevtris's **nestest**. These do not need any heuristic: they
+exercise documented hardware behaviour and report whether they passed, which
+the framework reads straight out of the emulated machine (blargg's status byte
+at `$6000`, nestest's result bytes at `$02`/`$03`).
+
+```sh
+make -C test-framework testroms
+```
+
+That fetches the ROMs if they are not already there and runs them:
+
+```
+  [PASS]   m0  16-special.nes
+  [FAIL]   m0  09-even_odd_frames.nes
+          -> blargg test failed (code 2): FD Pattern ----- should not skip
+             any clocks 09-even_odd_frames Failed #2
+```
+
+The test ROMs are **not** stored in this repository. Neither blargg's suites
+nor nestest ships a licence, and rNES is BSD-3-Clause, so they are downloaded
+from a pinned commit on GitHub and verified against a recorded SHA-256 rather
+than redistributed here. See
+[test-framework/roms/README.md](./test-framework/roms/README.md).
+
 See the [test framework documentation](./test-framework/README.md) for the
 complete list of options, the failure heuristics and the CI setup.
 

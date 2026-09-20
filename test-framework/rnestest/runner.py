@@ -23,6 +23,15 @@ class RunConfig:
     # Power-on CPU RAM byte. None = the harness default (0x00). Fixed rather
     # than left to malloc() so a verdict is reproducible; see --ram-fill.
     ram_fill: Optional[int] = None
+    # Read a test ROM's own verdict instead of guessing from the screen:
+    #   "off"     heuristics only (default; what a game sweep wants)
+    #   "auto"    watch for blargg's $6000 report
+    #   "nestest" enter nestest at $C000 and read its $02/$03 result
+    test_mode: str = "off"
+
+
+#: ``--test`` modes the harness accepts.
+TEST_MODES = ("off", "auto", "nestest")
 
 
 @dataclass
@@ -62,6 +71,8 @@ def run_rom(rom_path: str, key: str, cfg: RunConfig) -> RunResult:
         cmd += ["--blank-frames", str(cfg.blank_frames)]
     if cfg.ram_fill is not None:
         cmd += ["--ram-fill", str(cfg.ram_fill)]
+    if cfg.test_mode and cfg.test_mode != "off":
+        cmd += ["--test", cfg.test_mode]
     cmd.append(rom_path)
     try:
         proc = subprocess.run(
