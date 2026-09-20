@@ -27,6 +27,7 @@ CORE_SRCS := \
 	$(SRC)/mappers/m3_CNROM.c \
 	$(SRC)/mappers/m4_MMC3.c \
 	$(SRC)/mappers/m7_AxROM.c \
+	$(SRC)/mappers/m11_ColorDreams.c \
 	$(SRC)/hal/fileops.c \
 	$(SRC)/ringbuffer.c
 

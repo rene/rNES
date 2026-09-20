@@ -44,17 +44,22 @@ extern mapper_t m2_UxROM;
 extern mapper_t m3_CNROM;
 extern mapper_t m4_MMC3;
 extern mapper_t m7_AxROM;
+extern mapper_t m11_ColorDreams;
 
 /** Vector of all mappers */
 mapper_t *mappers[NUM_MAPPERS] = {
-	&m0_NROM,  /* 0 */
-	&m1_SxROM, /* 1 */
-	&m2_UxROM, /* 2 */
-	&m3_CNROM, /* 3 */
-	&m4_MMC3,  /* 4 */
-	0,		   /* 5 */
-	0,		   /* 6 */
-	&m7_AxROM, /* 7 */
+	&m0_NROM,		  /* 0 */
+	&m1_SxROM,		  /* 1 */
+	&m2_UxROM,		  /* 2 */
+	&m3_CNROM,		  /* 3 */
+	&m4_MMC3,		  /* 4 */
+	0,				  /* 5 */
+	0,				  /* 6 */
+	&m7_AxROM,		  /* 7 */
+	0,				  /* 8 */
+	0,				  /* 9 */
+	0,				  /* 10 */
+	&m11_ColorDreams, /* 11 */
 };
 
 /**
