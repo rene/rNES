@@ -97,6 +97,49 @@ The tool is straightforward to use, you can create a new palette or load an exis
 *PaletteEditor interface.*
 
 
+# Testing
+
+rNES comes with a headless ROM test framework, located at
+[test-framework](./test-framework), which runs a batch of NES ROMs without a
+display or a sound card and flags the obviously broken ones: crashes, hangs,
+blank or frozen screens and CPU jams.
+
+First, build the headless harness (it links the emulator core against a null
+backend, so no SDL is needed):
+
+```sh
+make -C test-framework
+```
+
+Then run it over a list of ROM paths (one per line, *#* comments allowed):
+
+```sh
+python3 test-framework/run_tests.py --rom-list ~/my-roms.txt
+```
+
+Each ROM gets a **PASS**, **FAIL** or **SKIP** verdict (SKIP means the mapper
+isn't implemented yet). A single ROM can also be inspected directly with the
+harness, which prints a JSON report with per-frame metrics:
+
+```sh
+./test-framework/rnes_headless --frames 300 <rom_file> | python3 -m json.tool
+```
+
+Results can be compared against a committed baseline, so that only regressions
+(PASS to FAIL) are reported. This is what CI runs on every pull request:
+
+```sh
+python3 test-framework/run_tests.py --rom-list test-framework/roms-ci.txt \
+    --baseline test-framework/baseline.json
+```
+
+Note that no commercial ROM is (or should ever be) committed to the repository,
+so the list used by CI only contains license-clean ROMs. Point the framework at
+your own local collection when testing a change.
+
+See the [test framework documentation](./test-framework/README.md) for the
+complete list of options, the failure heuristics and the CI setup.
+
 # Developing rNES
 
 Developers are really encouraged to develop and contribute to rNES. For
@@ -111,3 +154,25 @@ make docs
 
 The generated documentation will be available in different formats at `src/docs/dist`.
 
+
+# Contributing
+
+Contributions of all kinds are welcome: bug reports, accuracy fixes, new
+mappers, ports to new platforms and documentation.
+
+Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or a
+pull request. It covers:
+
+- How to report a game-specific bug in a way that can be acted on.
+- The coding style (enforced by clang-format: `cd src && make format-src`) and
+  the source file headers.
+- Commit conventions, including the mandatory `Signed-off-by:` line
+  (`git commit -s`) and how to disclose AI assisted code.
+- What CI checks on every pull request, and how to test your change.
+- Step-by-step guides for adding a new mapper and for porting rNES to a new
+  platform.
+
+Everyone participating in this project is expected to follow the
+[Code of Conduct](./CODE_OF_CONDUCT.md). Security issues should **not** be
+reported in public issues, see [SECURITY.md](./SECURITY.md) for the private
+reporting process.
