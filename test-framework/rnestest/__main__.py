@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import dataclasses
 import datetime
 import os
 import sys
@@ -20,7 +21,8 @@ from .mappers import implemented_mappers
 from .report import (TestRecord, github_annotations, print_summary,
                      write_json, write_junit)
 from .romheader import parse_rom_header
-from .runner import RunConfig, default_key, make_skip_result, run_rom
+from .runner import (TEST_MODES, RunConfig, default_key, make_skip_result,
+                     run_rom)
 
 
 def _default_harness() -> str:
@@ -63,6 +65,12 @@ def parse_args(argv=None) -> argparse.Namespace:
                    help="comma list of buttons to mash "
                         "(start,a,b,select,up,down,left,right); "
                         "default: start,a")
+    p.add_argument("--test-mode", choices=TEST_MODES, default="off",
+                   help="read a test ROM's own verdict instead of guessing "
+                        "from the screen: off (default), auto (blargg's "
+                        "$6000 report), nestest (enter nestest at $C000 and "
+                        "read $02/$03). A per-ROM 'test=' option in the ROM "
+                        "list overrides this")
     p.add_argument("--ram-fill", type=lambda v: int(v, 0), default=None,
                    help="byte the 2 KiB of CPU RAM powers on with (default "
                         "0x00). The emulator itself leaves it to malloc(); "
@@ -114,16 +122,80 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+#: Per-ROM options: list-file key -> (RunConfig field, parser).
+_ROM_OPTIONS = {
+    "test": ("test_mode", lambda v: _one_of(v, TEST_MODES, "test")),
+    "frames": ("frames", int),
+    "warmup": ("warmup", int),
+    "interval": ("interval", int),
+    "timeout": ("timeout", float),
+    "ram-fill": ("ram_fill", lambda v: int(v, 0)),
+}
+
+#: Separator between a ROM path and its options. Deliberately not plain
+#: whitespace: ROM filenames are full of spaces ("Some Game (USA).nes").
+OPT_SEP = " | "
+
+
+def _one_of(value: str, allowed, what: str) -> str:
+    if value not in allowed:
+        raise ValueError(f"{what} must be one of {', '.join(allowed)}")
+    return value
+
+
+def parse_rom_options(text: str) -> dict:
+    """Parse ``key=value key=value`` into RunConfig overrides.
+
+    ``input=none`` turns button mashing off; any other value is a button
+    list ("start,a,select"), which implies mashing is on.
+    """
+    overrides = {}
+    for token in text.split():
+        if "=" not in token:
+            raise ValueError(f"option {token!r} is not key=value")
+        key, value = token.split("=", 1)
+        if key == "input":
+            if value == "none":
+                overrides["inject_input"] = False
+            else:
+                overrides["inject_input"] = True
+                overrides["buttons"] = value
+            continue
+        if key not in _ROM_OPTIONS:
+            known = ", ".join(sorted(list(_ROM_OPTIONS) + ["input"]))
+            raise ValueError(f"unknown option {key!r} (known: {known})")
+        field, parse = _ROM_OPTIONS[key]
+        try:
+            overrides[field] = parse(value)
+        except ValueError as exc:
+            raise ValueError(f"bad value for {key!r}: {exc}") from exc
+    return overrides
+
+
 def read_rom_list(path: str, roms_dir: str) -> list:
-    """Return a list of (resolved_path, key) from the list file."""
+    """Return a list of (resolved_path, key, overrides) from the list file.
+
+    A line is a ROM path, optionally followed by ``" | "`` and per-ROM
+    options that override the command line for that ROM alone::
+
+        roms/external/blargg/instr_test-v5/official_only.nes | test=auto
+        roms/external/nestest/nestest.nes | test=nestest frames=120 input=none
+    """
     entries = []
     with open(path, "r", encoding="utf-8") as fh:
-        for raw in fh:
+        for lineno, raw in enumerate(fh, 1):
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            resolved = line if os.path.isabs(line) else os.path.join(roms_dir, line)
-            entries.append((os.path.normpath(resolved), default_key(line)))
+            rom, _, opt_text = line.partition(OPT_SEP)
+            rom = rom.strip()
+            try:
+                overrides = parse_rom_options(opt_text) if opt_text else {}
+            except ValueError as exc:
+                raise ValueError(f"{path}:{lineno}: {exc}") from exc
+            resolved = rom if os.path.isabs(rom) else os.path.join(roms_dir, rom)
+            entries.append((os.path.normpath(resolved), default_key(rom),
+                            overrides))
     return entries
 
 
@@ -134,7 +206,11 @@ def main(argv=None) -> int:
         print(f"rom list not found: {args.rom_list}", file=sys.stderr)
         return 2
     roms_dir = args.roms or os.path.dirname(os.path.abspath(args.rom_list))
-    entries = read_rom_list(args.rom_list, roms_dir)
+    try:
+        entries = read_rom_list(args.rom_list, roms_dir)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     if not entries:
         print(f"No ROMs listed in {args.rom_list}; nothing to test.")
@@ -159,6 +235,7 @@ def main(argv=None) -> int:
         freeze_frames=(args.freeze_frames if args.detect_freeze else None),
         blank_frames=args.blank_frames,
         ram_fill=args.ram_fill,
+        test_mode=args.test_mode,
     )
 
     if not os.path.isfile(args.harness):
@@ -168,10 +245,10 @@ def main(argv=None) -> int:
         return 2
 
     # Decide per-ROM action: skip immediately, or run the harness.
-    to_run = []       # (idx, path, key, info)
+    to_run = []       # (idx, path, key, cfg)
     prebuilt = {}     # idx -> RunResult (for pre-skips)
     infos = {}        # idx -> RomInfo
-    for idx, (path, key) in enumerate(entries):
+    for idx, (path, key, overrides) in enumerate(entries):
         if not os.path.exists(path):
             prebuilt[idx] = make_skip_result(path, key, "file not found")
             infos[idx] = None
@@ -185,7 +262,8 @@ def main(argv=None) -> int:
             prebuilt[idx] = make_skip_result(
                 path, key, f"unsupported mapper {info.mapper}", info.mapper)
         else:
-            to_run.append((idx, path, key, info))
+            rom_cfg = dataclasses.replace(cfg, **overrides) if overrides else cfg
+            to_run.append((idx, path, key, rom_cfg))
 
     # Run the supported ROMs (parallel).
     results = dict(prebuilt)
@@ -195,8 +273,8 @@ def main(argv=None) -> int:
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as ex:
         futs = {
-            ex.submit(run_rom, path, key, cfg): idx
-            for (idx, path, key, info) in to_run
+            ex.submit(run_rom, path, key, rom_cfg): idx
+            for (idx, path, key, rom_cfg) in to_run
         }
         # account for pre-skipped ones in the progress counter
         done = len(prebuilt)
@@ -211,7 +289,7 @@ def main(argv=None) -> int:
 
     # Build records.
     records = []
-    for idx, (path, key) in enumerate(entries):
+    for idx, (path, key, _opts) in enumerate(entries):
         res = results[idx]
         v = analyze(res, th)
         info = infos.get(idx)

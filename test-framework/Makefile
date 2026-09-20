@@ -56,7 +56,22 @@ STRICT_CFLAGS := -Wall -Wextra -Werror
 
 TARGET := rnes_headless
 
-.PHONY: all clean sanitize strict
+# --- Test ROM suite (blargg's NES tests + nestest) -------------------------
+# The ROMs are fetched rather than vendored -- neither suite carries a licence
+# (see roms/README.md) -- so `testroms` downloads them first, verifying each
+# against the SHA-256 in testroms.json.
+#
+# Self-checking ROMs need flags a game sweep does not: --test-mode auto reads
+# the verdict blargg's ROMs publish at $6000 instead of guessing from the
+# screen (a finished test parks the CPU in a `jmp *`, which the heuristics
+# read as a hang), and --no-input keeps the menu masher away from ROMs that
+# drive themselves. The frame budget only bounds a ROM that never reports:
+# a run stops the moment one publishes its verdict.
+TESTROM_FLAGS := --rom-list testroms-ci.txt \
+	--test-mode auto --no-input \
+	--frames 5400 --warmup 30 --interval 30 --timeout 180
+
+.PHONY: all clean sanitize strict fetch-testroms testroms testroms-baseline
 
 all: $(TARGET)
 
@@ -81,6 +96,23 @@ sanitize:
 # suitable for every CI run.
 strict:
 	$(CC) -fsyntax-only $(STRICT_CFLAGS) $(CFLAGS) $(HARNESS_SRCS)
+
+# Download the test ROMs (idempotent: already-correct files are left alone).
+fetch-testroms:
+	./fetch-testroms.py
+
+# Run the test ROM suite, gated on testroms-baseline.json. TESTROM_EXTRA is
+# how CI adds its reporting flags without restating the run's flags:
+#   make testroms TESTROM_EXTRA="--json r.json --junit r.xml --github"
+testroms: $(TARGET) fetch-testroms
+	python3 run_tests.py $(TESTROM_FLAGS) --baseline testroms-baseline.json \
+		$(TESTROM_EXTRA)
+
+# Re-record the expected verdicts. Run this after a change moves a test ROM
+# from FAIL to PASS, and commit the updated baseline with the fix.
+testroms-baseline: $(TARGET) fetch-testroms
+	python3 run_tests.py $(TESTROM_FLAGS) --baseline testroms-baseline.json \
+		--update-baseline
 
 clean:
 	@rm -f $(TARGET)

@@ -1,0 +1,107 @@
+# Test ROMs for the GitHub CI job -- blargg's NES suites and nestest.
+#
+# These files are NOT in the repository (see roms/README.md); fetch them
+# first, then run the suite:
+#
+#     make -C test-framework testroms
+#
+# which is `fetch-testroms.py` followed by run_tests.py with the flags a
+# test ROM needs: --test-mode auto (read blargg's $6000 report instead of
+# guessing from the screen), --no-input (these ROMs drive themselves) and
+# a frame budget big enough for the longest suite. A run stops the moment
+# a ROM publishes its verdict, so the budget only bounds the ones that
+# never report.
+#
+# A line may carry per-ROM overrides after " | "; nestest needs them
+# because it has no signature to detect and is entered at $C000.
+
+# apu_reset -- APU: state carried across a soft reset
+roms/external/blargg/apu_reset/4015_cleared.nes
+roms/external/blargg/apu_reset/4017_timing.nes
+roms/external/blargg/apu_reset/4017_written.nes
+roms/external/blargg/apu_reset/irq_flag_cleared.nes
+roms/external/blargg/apu_reset/len_ctrs_enabled.nes
+roms/external/blargg/apu_reset/works_immediately.nes
+
+# apu_test -- APU: length counter, IRQ flag, frame counter
+roms/external/blargg/apu_test/1-len_ctr.nes
+roms/external/blargg/apu_test/2-len_table.nes
+roms/external/blargg/apu_test/3-irq_flag.nes
+roms/external/blargg/apu_test/4-jitter.nes
+roms/external/blargg/apu_test/5-len_timing.nes
+roms/external/blargg/apu_test/6-irq_flag_timing.nes
+roms/external/blargg/apu_test/7-dmc_basics.nes
+roms/external/blargg/apu_test/8-dmc_rates.nes
+
+# cpu_dummy_writes -- CPU: read-modify-write dummy writes
+roms/external/blargg/cpu_dummy_writes/cpu_dummy_writes_oam.nes
+roms/external/blargg/cpu_dummy_writes/cpu_dummy_writes_ppumem.nes
+
+# cpu_exec_space -- CPU: executing code from PPU/APU address space
+roms/external/blargg/cpu_exec_space/test_cpu_exec_space_apu.nes
+roms/external/blargg/cpu_exec_space/test_cpu_exec_space_ppuio.nes
+
+# cpu_interrupts_v2 -- CPU: NMI/IRQ/BRK behaviour and timing
+roms/external/blargg/cpu_interrupts_v2/1-cli_latency.nes
+roms/external/blargg/cpu_interrupts_v2/2-nmi_and_brk.nes
+roms/external/blargg/cpu_interrupts_v2/3-nmi_and_irq.nes
+roms/external/blargg/cpu_interrupts_v2/4-irq_and_dma.nes
+roms/external/blargg/cpu_interrupts_v2/5-branch_delays_irq.nes
+
+# cpu_reset -- CPU: registers and RAM across a soft reset
+roms/external/blargg/cpu_reset/ram_after_reset.nes
+roms/external/blargg/cpu_reset/registers.nes
+
+# instr_misc -- CPU: instruction edge cases
+roms/external/blargg/instr_misc/01-abs_x_wrap.nes
+roms/external/blargg/instr_misc/02-branch_wrap.nes
+roms/external/blargg/instr_misc/03-dummy_reads.nes
+roms/external/blargg/instr_misc/04-dummy_reads_apu.nes
+
+# instr_test-v5 -- CPU: every official and unofficial instruction
+roms/external/blargg/instr_test-v5/01-basics.nes
+roms/external/blargg/instr_test-v5/02-implied.nes
+roms/external/blargg/instr_test-v5/03-immediate.nes
+roms/external/blargg/instr_test-v5/04-zero_page.nes
+roms/external/blargg/instr_test-v5/05-zp_xy.nes
+roms/external/blargg/instr_test-v5/06-absolute.nes
+roms/external/blargg/instr_test-v5/07-abs_xy.nes
+roms/external/blargg/instr_test-v5/08-ind_x.nes
+roms/external/blargg/instr_test-v5/09-ind_y.nes
+roms/external/blargg/instr_test-v5/10-branches.nes
+roms/external/blargg/instr_test-v5/11-stack.nes
+roms/external/blargg/instr_test-v5/12-jmp_jsr.nes
+roms/external/blargg/instr_test-v5/13-rts.nes
+roms/external/blargg/instr_test-v5/14-rti.nes
+roms/external/blargg/instr_test-v5/15-brk.nes
+roms/external/blargg/instr_test-v5/16-special.nes
+
+# instr_timing -- CPU: instruction and branch timing
+roms/external/blargg/instr_timing/1-instr_timing.nes
+roms/external/blargg/instr_timing/2-branch_timing.nes
+
+# oam_read -- PPU: OAM readback through $2004
+roms/external/blargg/oam_read/oam_read.nes
+
+# oam_stress -- PPU: heavy OAM read/write traffic
+roms/external/blargg/oam_stress/oam_stress.nes
+
+# ppu_open_bus -- PPU: open-bus decay on the register ports
+roms/external/blargg/ppu_open_bus/ppu_open_bus.nes
+
+# ppu_vbl_nmi -- PPU: VBL flag and NMI timing
+roms/external/blargg/ppu_vbl_nmi/01-vbl_basics.nes
+roms/external/blargg/ppu_vbl_nmi/02-vbl_set_time.nes
+roms/external/blargg/ppu_vbl_nmi/03-vbl_clear_time.nes
+roms/external/blargg/ppu_vbl_nmi/04-nmi_control.nes
+roms/external/blargg/ppu_vbl_nmi/05-nmi_timing.nes
+roms/external/blargg/ppu_vbl_nmi/06-suppression.nes
+roms/external/blargg/ppu_vbl_nmi/07-nmi_on_timing.nes
+roms/external/blargg/ppu_vbl_nmi/08-nmi_off_timing.nes
+roms/external/blargg/ppu_vbl_nmi/09-even_odd_frames.nes
+roms/external/blargg/ppu_vbl_nmi/10-even_odd_timing.nes
+
+# nestest -- kevtris's CPU test, run unattended from $C000 with the
+# result read out of $02/$03. The whole sweep is over inside one frame;
+# the rest of the budget just lets the ROM settle.
+roms/external/nestest/nestest.nes | test=nestest frames=120 input=none

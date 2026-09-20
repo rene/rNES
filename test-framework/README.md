@@ -1,10 +1,15 @@
 # rNES ROM Test Framework
 
-Automated smoke-testing for [rNES](../README.md): run a batch of NES ROMs and
-flag the obviously-broken ones — crashes, hangs, blank (black/gray/white)
-screens, frozen screens, and CPU jams / infinite loops — without a display,
-sound card, or human. Designed to run locally over a large ROM set **and** in
-GitHub CI.
+Automated testing for [rNES](../README.md), in two flavours, both without a
+display, sound card, or human:
+
+- **A smoke sweep over real games** — run a batch of NES ROMs and flag the
+  obviously-broken ones: crashes, hangs, blank (black/gray/white) screens,
+  frozen screens, and CPU jams / infinite loops. Designed to run locally over
+  a large ROM set **and** in GitHub CI.
+- **A test ROM suite** — [blargg's NES tests and nestest](#test-roms-blargg--nestest),
+  which are written to exercise documented hardware behaviour and report
+  whether they passed. No heuristics involved: the ROM says.
 
 ## How it works
 
@@ -30,7 +35,11 @@ Two pieces:
                         rnes_headless <rom>  ──► JSON metrics
                                │
                                ▼
-                    heuristics ─► PASS / FAIL / SKIP
+                    did the ROM report a result?
+                               │ yes ─► its own verdict
+                               │ no  ─► heuristics
+                               ▼
+                         PASS / FAIL / SKIP
                                │
                                ▼
                     compare vs baseline.json ─► regressions? ─► exit 1
@@ -120,6 +129,65 @@ animates → **PASS**. A genuinely hung game ignores the input and stays static 
 - `--frames 600` — give games with unusually long intros more time to reach
   animating content.
 
+## Test ROMs (blargg + nestest)
+
+A *game* can only be judged by how it behaves; a *test ROM* states its own
+result. The suite understands two conventions, selected with `--test-mode`:
+
+| Mode | ROMs | How the result is read |
+|------|------|------------------------|
+| `off` (default) | games | not used — screen/CPU heuristics only |
+| `auto` | blargg's suites | the ROM writes `$DE $B0 $61` to `$6001-$6003`, a status byte to `$6000` (`$80` running, `$81` wants a reset, otherwise the result code, `0` = passed) and an ASCII summary at `$6004` |
+| `nestest` | nestest | entered at `$C000` instead of its reset vector, it runs every test unattended and leaves the result in zero page at `$02`/`$03`, both `0` when all passed |
+
+A ROM's own verdict wins outright — the screen heuristics never see it. They
+would in fact get it backwards: a blargg test that has *finished* parks the
+CPU in a `jmp *` on a screen that stops changing, which "CPU stuck in tight
+loop" reads as a hang. The one check that still comes first is `cpu_jammed`:
+a CPU that hit a JAM/KIL opcode stopped in the middle, so whatever the ROM had
+written down is not the answer it meant to give.
+
+A run stops the moment a ROM publishes its result, so the frame budget only
+bounds ROMs that never report at all.
+
+```sh
+make -C test-framework testroms            # fetch (if needed) + run + gate
+make -C test-framework testroms-baseline   # re-record the expected verdicts
+```
+
+The ROMs themselves are **not** in this repository — neither blargg's suites
+nor nestest carries a licence, so rNES fetches them from a pinned upstream
+commit and verifies every SHA-256 instead of redistributing them. See
+[`roms/README.md`](roms/README.md) for the reasoning and for how to add more;
+[`testroms.json`](testroms.json) is the manifest and
+[`testroms-ci.txt`](testroms-ci.txt) the list CI runs.
+
+Failure reasons quote the ROM verbatim, which is usually enough to fix the bug
+without opening an emulator:
+
+```
+[FAIL] m0  09-even_odd_frames.nes
+       -> blargg test failed (code 2): FD Pattern ----- should not skip any
+          clocks 09-even_odd_frames Failed #2
+[PASS] m0  16-special.nes
+       -> All 16 tests passed
+```
+
+### Per-ROM options
+
+A line in a ROM list may carry overrides after `" | "` (a pipe with spaces —
+not plain whitespace, because ROM filenames are full of spaces):
+
+```
+roms/external/nestest/nestest.nes | test=nestest frames=120 input=none
+```
+
+`test=`, `frames=`, `warmup=`, `interval=`, `timeout=` and `ram-fill=` map to
+the command-line options of the same name; `input=none` turns the menu masher
+off and `input=start,select` sets the buttons. An unknown option is an error
+rather than a silent default — a ROM run under flags nobody asked for would
+have the resulting verdict recorded as its baseline.
+
 ## What counts as a failure
 
 Applied to the *post-warmup* samples; a signal only fails a ROM if it holds for
@@ -132,11 +200,16 @@ escapes a loop, passes).
 | `hang: wall-clock timeout` | ROM didn't finish within `--timeout` |
 | `emulator hang (no video output)` | PPU never produced a vblank |
 | `CPU jammed (JAM/KIL opcode)` | the CPU executed an illegal jam opcode |
+| `<test> test failed (code N): …` | a [test ROM](#test-roms-blargg--nestest) reported a non-zero result, quoted verbatim |
+| `<test> test did not finish` | a test ROM never reported: the frame budget ran out, or the run stopped early |
 | `blank/solid screen (#RRGGBB, N% drawn)` | ≤ `--blank-colors` colors, or less than `--min-content-frac` of the screen drawn, every sample — after running on to `--blank-frames` to confirm (this is the black/gray/white "freeze") |
 | `CPU stuck in tight loop` | ≤ `--loop-max-pcs` distinct executed PCs/frame, every sample |
 | `frozen screen (no change for N frames)` | **opt-in** (`--detect-freeze`): a *colourful* framebuffer that never changes |
 
-`SKIP` covers unsupported mappers, non-NES files, and missing files.
+`SKIP` covers unsupported mappers, non-NES files, and missing files. The two
+test-ROM rows are the only ones that are not heuristics, and they apply only
+under `--test-mode`; everything else in the table is judged from the screen and
+the CPU.
 
 > **Why `frozen screen` is opt-in.** A *blank* screen (black/gray/white) that
 > is still blank once it has been given time to draw (see below) is a reliable
@@ -223,8 +296,13 @@ the harness and runs [`roms-ci.txt`](roms-ci.txt) against `baseline.json` on
 every push/PR, emitting GitHub annotations + a step summary and uploading
 `results.json` / `results.xml` (JUnit) artifacts.
 
-Commercial ROMs can't be committed, so `roms/` ships empty (CI is a green no-op)
-until you add **license-clean** ROMs — see [`roms/README.md`](roms/README.md).
+It then fetches the test ROMs (cached between runs, keyed on `testroms.json`)
+and runs [`testroms-ci.txt`](testroms-ci.txt) against `testroms-baseline.json`
+via `make testroms`, so CI and a local run share one set of flags.
+
+Commercial ROMs can't be committed, so `roms/` ships empty (that half of CI is
+a green no-op) until you add **license-clean** ROMs — see
+[`roms/README.md`](roms/README.md).
 
 ## Useful options
 
@@ -236,6 +314,8 @@ until you add **license-clean** ROMs — see [`roms/README.md`](roms/README.md).
 --jobs N            ROMs to run in parallel (default: CPU count)
 --buttons LIST      buttons to mash (default: start,a; e.g. start,a,select)
 --no-input          don't inject any controller input (input is on by default)
+--test-mode MODE    read a test ROM's own verdict: off (default), auto
+                    (blargg's $6000 report), nestest ($C000 entry, $02/$03)
 --blank-colors N    distinct-color threshold for a flat screen (default 1)
 --min-content-frac F  share of non-background pixels a screen needs to count
                     as drawn (default 0.001 = 0.1%)
@@ -264,9 +344,14 @@ test-framework/
 ├── rnestest/           # Python package (romheader, mappers, runner,
 │                       #   analyze, baseline, report, __main__)
 ├── run_tests.py        # CLI wrapper
+├── fetch-testroms.py   # downloads the test ROMs (pinned + checksummed)
 ├── roms/               # license-clean CI ROMs (empty by default)
-├── roms-ci.txt         # ROM list used by CI
-├── baseline.json       # expected verdicts
+│   └── external/       # downloaded test ROMs (git-ignored)
+├── roms-ci.txt         # game ROM list used by CI
+├── baseline.json       # expected verdicts for roms-ci.txt
+├── testroms.json       # test ROM manifest: upstream commit + SHA-256s
+├── testroms-ci.txt     # test ROM list used by CI
+├── testroms-baseline.json  # expected verdicts for testroms-ci.txt
 ├── tests/              # unit tests
-└── Makefile            # builds rnes_headless (no SDL)
+└── Makefile            # builds rnes_headless (no SDL), runs the test ROMs
 ```
