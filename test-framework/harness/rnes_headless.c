@@ -124,6 +124,14 @@ static int popcount_pc_seen(void)
  *   two zero-page bytes, $02 and $03, both 0 when everything passed. There
  *   is no signature to watch for, so this mode is requested explicitly.
  *
+ * blargg's 2005-era runtime (sprite_hit_tests, sprite_overflow_tests, ...)
+ *   Predates the $6000 report. It keeps a result byte at $F8 -- the number
+ *   of the test being run, replaced by 1 if every test passed -- prints it
+ *   on screen, beeps it, and then parks the CPU in a `jmp` to itself. $F8
+ *   holds the current test number throughout, so it says nothing about
+ *   whether the run is over; the park is what says that. No signature
+ *   either, so this mode is requested explicitly too.
+ *
  * Polling is non-intrusive: sbus_read() serves $0000-$07FF from CPU RAM and
  * $6000-$7FFF from the cartridge's PRG-RAM, neither of which has read side
  * effects, so looking every frame cannot disturb what is being measured.
@@ -131,7 +139,8 @@ static int popcount_pc_seen(void)
 enum test_mode {
 	TEST_OFF = 0,	/* judge by screen/CPU heuristics alone (default) */
 	TEST_AUTO,		/* watch for blargg's $6000 report */
-	TEST_NESTEST	/* enter nestest at $C000, read its $02/$03 result */
+	TEST_NESTEST,	/* enter nestest at $C000, read its $02/$03 result */
+	TEST_BLARGG2005 /* read the $F8 result of blargg's older runtime */
 };
 
 #define BLARGG_STATUS 0x6000
@@ -155,6 +164,18 @@ enum test_mode {
  * rather than a guess, and it keeps that artificial jam out of the report.
  */
 #define NESTEST_DONE 0xc66e
+
+/* blargg's older runtime: result byte, and the value meaning "passed". */
+#define B2005_RESULT 0x00f8
+#define B2005_PASSED 1
+/*
+ * How few distinct PCs in a frame count as "parked", and for how many
+ * frames in a row. A `jmp` to itself is one PC, but so is a vblank wait of
+ * two instructions, and that can span most of a frame -- it cannot span
+ * three of them, which is what the streak rules out.
+ */
+#define B2005_PARK_PCS 4
+#define B2005_PARK_FRAMES 3
 
 /* True once the ROM has written blargg's $DE $B0 $61 signature. */
 static int blargg_signature_present(void)
@@ -445,7 +466,9 @@ static void usage(const char *argv0)
 			"guessing from\n"
 			"                     the screen: off (default), auto (blargg's "
 			"$6000 report),\n"
-			"                     nestest (enter at $C000, read $02/$03)\n",
+			"                     nestest (enter at $C000, read $02/$03),\n"
+			"                     blargg2005 (older runtime, result at "
+			"$F8)\n",
 			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS, DEF_RAM_FILL);
 }
 
@@ -569,6 +592,7 @@ int main(int argc, char *argv[])
 	int test_code = 0, test_done = 0, test_resets = 0;
 	int reset_pending = 0;			/* frames left before a soft reset */
 	int reset_served = 0;			/* $81 already acted on, awaiting $80 */
+	int parked_frames = 0;			/* consecutive frames the CPU sat still */
 	char test_text[BLARGG_TEXT_MAX];
 
 	test_text[0] = '\0';
@@ -597,6 +621,8 @@ int main(int argc, char *argv[])
 				test_mode = TEST_AUTO;
 			else if (!strcmp(mode, "nestest"))
 				test_mode = TEST_NESTEST;
+			else if (!strcmp(mode, "blargg2005"))
+				test_mode = TEST_BLARGG2005;
 			else {
 				fprintf(stderr, "%s: bad --test mode: \"%s\"\n", argv[0],
 						mode);
@@ -793,6 +819,29 @@ int main(int argc, char *argv[])
 			}
 		}
 
+		/* blargg's older runtime parks the CPU once it has reported, so a
+		 * run of frames with almost no PC movement is the signal that $F8
+		 * has stopped being "the test now running" and become the verdict.
+		 * pc_seen still holds this frame at this point. */
+		if (test_mode == TEST_BLARGG2005 && !test_done) {
+			if (popcount_pc_seen() <= B2005_PARK_PCS)
+				parked_frames++;
+			else
+				parked_frames = 0;
+			if (parked_frames >= B2005_PARK_FRAMES) {
+				uint8_t res = sbus_read(B2005_RESULT);
+
+				test_proto = "blargg2005";
+				test_code = (res == B2005_PASSED) ? 0 : res;
+				test_done = 1;
+				if (res == B2005_PASSED)
+					snprintf(test_text, sizeof(test_text), "passed");
+				else
+					snprintf(test_text, sizeof(test_text),
+							 "failed #%u ($F8=%02x)", res, res);
+			}
+		}
+
 		/* Sample after warm-up, every `interval` frames */
 		if (frames_run + 1 > warmup && ((frames_run + 1) % interval) == 0 &&
 			nsamples < MAX_SAMPLES) {
@@ -876,6 +925,17 @@ int main(int argc, char *argv[])
 	 * end, and reaching $C66E is what says so. Without that, every test the
 	 * sweep never got to would read as a test that passed.
 	 */
+	/* Never parked: the run used up its frames without reporting. Say so
+	 * with whatever $F8 held, which names the test it was stuck on. */
+	if (test_mode == TEST_BLARGG2005 && !test_done) {
+		uint8_t res = sbus_read(B2005_RESULT);
+
+		test_proto = "blargg2005";
+		test_code = res;
+		snprintf(test_text, sizeof(test_text),
+				 "never reported (stuck in test #%u)", res);
+	}
+
 	if (test_mode == TEST_NESTEST) {
 		int lo = sbus_read(0x0002);
 		int hi = sbus_read(0x0003);

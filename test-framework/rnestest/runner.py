@@ -27,11 +27,12 @@ class RunConfig:
     #   "off"     heuristics only (default; what a game sweep wants)
     #   "auto"    watch for blargg's $6000 report
     #   "nestest" enter nestest at $C000 and read its $02/$03 result
+    #   "blargg2005" blargg's older runtime, result byte at $F8
     test_mode: str = "off"
 
 
 #: ``--test`` modes the harness accepts.
-TEST_MODES = ("off", "auto", "nestest")
+TEST_MODES = ("off", "auto", "nestest", "blargg2005")
 
 
 @dataclass
