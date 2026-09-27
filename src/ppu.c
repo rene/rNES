@@ -241,6 +241,63 @@ int ppu_destroy(void)
 	return 0;
 }
 
+/*
+ * Open-bus decay register.
+ *
+ * The PPU data bus has no driver of its own: reading a write-only port
+ * returns whatever charge the bus is still holding from the last time
+ * something drove it, and that charge leaks away in about 600 ms. It does
+ * not leak as one byte, though -- the register refreshes in three
+ * independent groups, and which groups a read refreshes depends on how many
+ * bits the PPU actually drove:
+ *
+ *   $2002       drives bits 7-5 from the status register and leaves 4-0 to
+ *               the bus, so it refreshes bit 5 and bits 7-6 only.
+ *   $2007       drives all eight bits from VRAM, but only 5-0 when the
+ *               address is in palette memory (which is 6 bits wide), so a
+ *               palette read leaves bits 7-6 to decay.
+ *   $2004       drives all eight.
+ *   write-only  drives nothing and refreshes nothing.
+ *
+ * Any write to a port drives the whole bus and refreshes everything.
+ * https://www.nesdev.org/wiki/PPU_registers#Ports
+ */
+#define DECAY_GROUPS 3
+/* ~600 ms at 60 fps. The bus is measured in frames here because that is the
+ * coarsest tick the tests can see: they sample 10 ms apart at the finest. */
+#define DECAY_FRAMES 36
+#define DECAY_LOW (1u << 0)	 /* bits 4-0 */
+#define DECAY_BIT5 (1u << 1) /* bit 5 */
+#define DECAY_HIGH (1u << 2) /* bits 7-6 */
+#define DECAY_ALL (DECAY_LOW | DECAY_BIT5 | DECAY_HIGH)
+
+static const uint8_t decay_mask[DECAY_GROUPS] = {0x1f, 0x20, 0xc0};
+
+/* Drive `groups` of the bus with `value` and restart their decay. */
+static void decay_refresh(uint8_t value, uint8_t groups)
+{
+	int i;
+
+	for (i = 0; i < DECAY_GROUPS; i++) {
+		if ((groups & (1u << i)) == 0)
+			continue;
+		ppu.gen_latch = (uint8_t)((ppu.gen_latch & ~decay_mask[i]) |
+								  (value & decay_mask[i]));
+		ppu.decay_timer[i] = DECAY_FRAMES;
+	}
+}
+
+/* One frame of leakage: a group nobody refreshed reaches zero. */
+static void decay_tick(void)
+{
+	int i;
+
+	for (i = 0; i < DECAY_GROUPS; i++) {
+		if (ppu.decay_timer[i] > 0 && --ppu.decay_timer[i] == 0)
+			ppu.gen_latch &= (uint8_t)~decay_mask[i];
+	}
+}
+
 /**
  * Resets PPU’s to initial state
  */
@@ -262,6 +319,10 @@ void ppu_reset(void)
 	ppu.PPUSCROLL = 0;
 	ppu.PPUDATA = 0;
 	ppu.gen_latch = 0;
+	ppu.decay_timer[0] = 0;
+	ppu.decay_timer[1] = 0;
+	ppu.decay_timer[2] = 0;
+	ppu.vram_buffer = 0;
 	ppu.age = 0;
 	ppu.sprite_cnt = 0;
 
@@ -301,22 +362,24 @@ uint8_t ppu_reg_read(uint16_t reg)
 
 	switch (reg) {
 	case REG_PPUCTRL: /* PPUCTRL: Write-Only */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 
 	case REG_PPUMASK: /* PPUMASK: Write-Only */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 
 	case REG_PPUSTATUS: /* PPUSTATUS: Read-Only */
 		value = (ppu.PPUSTATUS.raw & 0xe0) | (ppu.gen_latch & 0x1f);
-		ppu.gen_latch = value;
+		/* Bits 7-5 come from the status register, 4-0 from the bus: only
+		 * the ones the PPU drove are refreshed. */
+		decay_refresh(value, DECAY_BIT5 | DECAY_HIGH);
 		ppu.iregs.w = 0;
 		ppu.PPUSTATUS.reg.vblank = 0;
 		break;
 
 	case REG_OAMADDR: /* OAMADDR: Write-Only */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 
 	case REG_OAMDATA: /* OAMDATA: Read/Write */
@@ -324,27 +387,35 @@ uint8_t ppu_reg_read(uint16_t reg)
 		/* If we have byte 2 of a sprite, reserved bits must be zero */
 		if ((ppu.OAMADDR & 0x03) == 0x02)
 			value &= 0xe3;
-		ppu.gen_latch = value;
+		decay_refresh(value, DECAY_ALL);
 		break;
 
 	case REG_PPUSCROLL: /* PPUSCROLL: Write twice */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 
 	case REG_PPUADDR: /* PPUADDR: Write twice */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 
 	case REG_PPUDATA: /* PPUDATA: Read/Write */
-		value = ppu.gen_latch;
-		ppu.gen_latch =
-			cartridge_mem_read(ppu.cartridge, ppu.iregs.v.reg.raw, MEM_PPU);
-
-		/* For palette memory, return the actual value */
 		if (ppu.iregs.v.reg.raw >= 0x3f00) {
-			value = ppu.gen_latch;
-			ppu.gen_latch = cartridge_mem_read(
+			/* Palette memory answers at once and is only 6 bits wide, so
+			 * bits 7-6 are left to the bus and keep decaying. The read
+			 * buffer is still refilled, from the nametable underneath. */
+			value = (uint8_t)(cartridge_mem_read(ppu.cartridge,
+												 ppu.iregs.v.reg.raw, MEM_PPU) &
+							  0x3f);
+			value |= (uint8_t)(ppu.gen_latch & 0xc0);
+			ppu.vram_buffer = cartridge_mem_read(
 				ppu.cartridge, ppu.iregs.v.reg.raw & 0x2fff, MEM_PPU);
+			decay_refresh(value, DECAY_LOW | DECAY_BIT5);
+		} else {
+			/* Everything else is one read behind. */
+			value = ppu.vram_buffer;
+			ppu.vram_buffer =
+				cartridge_mem_read(ppu.cartridge, ppu.iregs.v.reg.raw, MEM_PPU);
+			decay_refresh(value, DECAY_ALL);
 		}
 
 		if (ppu.PPUCTRL.reg.vram_inc == 0)
@@ -354,7 +425,7 @@ uint8_t ppu_reg_read(uint16_t reg)
 		break;
 
 	case REG_OAMDMA: /* OAMDMA: Write-Only */
-		value = ppu.gen_latch | ppu.PPUSTATUS.reg.open_bus;
+		value = ppu.gen_latch;
 		break;
 	}
 
@@ -373,7 +444,7 @@ void ppu_reg_write(uint16_t reg, uint8_t value)
 
 	/* Write to any register should set the latch */
 	if (reg >= REG_PPUCTRL && reg <= REG_PPUDATA)
-		ppu.gen_latch = value;
+		decay_refresh(value, DECAY_ALL);
 
 	switch (reg) {
 	case REG_PPUCTRL: /* PPUCTRL: Write-Only */
@@ -880,6 +951,7 @@ void ppu_clock(void)
 		if (ppu.scanline > 261) {
 			ppu.scanline = 0;
 			ppu.odd_frame = !ppu.odd_frame;
+			decay_tick();
 		}
 	}
 }
