@@ -93,6 +93,10 @@ struct _cpu650x {
 	uint8_t nmi_pin;
 	/** NMI signal edge detection */
 	uint8_t nmi_trigger;
+	/** NMI raised by the running instruction's own bus access (deferred) */
+	uint8_t nmi_deferred;
+	/** Non-zero while an instruction's bus access is being performed */
+	uint8_t bus_access;
 	/** Flag to execute decoded instruction */
 	uint8_t exec_pending;
 	/** CPU running state */
