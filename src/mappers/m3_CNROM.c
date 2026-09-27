@@ -115,8 +115,9 @@ static uint8_t m3_prg_mem_handler(struct _mapper_t *m, enum mem_op op,
 			idx = address & 0x7ff;
 			return m3->prg_ram[idx];
 		} else if (address >= 0x8000 && address <= 0xffff) {
+			/* 16 KB PRG ROMs are mirrored at $C000-$FFFF */
 			idx = address & 0x7fff;
-			return cartridge->rom->prg_rom[idx];
+			return cartridge->rom->prg_rom[idx % cartridge->rom->prg_size];
 		}
 		break;
 
@@ -155,7 +156,7 @@ static uint8_t m3_chr_mem_handler(struct _mapper_t *m, enum mem_op op,
 	if (address < 0x2000) {
 		switch (op) {
 		case CMEM_READ:
-			return cartridge->rom->chr_rom[idx];
+			return cartridge->rom->chr_rom[idx % cartridge->rom->chr_size];
 
 		case CMEM_WRITE:
 			break;
