@@ -76,6 +76,8 @@ static uint8_t pc_seen[8192];		 /* 1 bit per 16-bit PC address */
 static unsigned long instr_count;	 /* total instructions executed */
 static uint16_t last_pc;			 /* most recently executed PC */
 static int cpu_jammed;				 /* set by the CPU kill (JAM) callback */
+static uint16_t watch_pc;			 /* PC to watch for (0 = none) */
+static int watch_pc_hit;			 /* set once watch_pc was reached */
 
 static void debug_cb(cpu650x_state_t st)
 {
@@ -83,6 +85,8 @@ static void debug_cb(cpu650x_state_t st)
 	pc_seen[pc >> 3] |= (uint8_t)(1u << (pc & 7));
 	last_pc = pc;
 	instr_count++;
+	if (watch_pc != 0 && pc == watch_pc)
+		watch_pc_hit = 1;
 }
 
 static void kill_cb(cpu650x_state_t st)
@@ -142,6 +146,15 @@ enum test_mode {
  * progress. The reset-driven suites need a handful, never dozens. */
 #define BLARGG_MAX_RESETS 8
 #define NESTEST_ENTRY 0xc000
+/*
+ * Where the unattended sweep ends: the RTS at $C66E, the last instruction
+ * of the canonical reference trace (nestest.log). Entered with a JMP, that
+ * RTS has no return address to pop, so it returns into whatever the stack
+ * happens to hold and everything past it is derailed code -- which sooner
+ * or later executes a JAM. Stopping here is what makes $02/$03 a result
+ * rather than a guess, and it keeps that artificial jam out of the report.
+ */
+#define NESTEST_DONE 0xc66e
 
 /* True once the ROM has written blargg's $DE $B0 $61 signature. */
 static int blargg_signature_present(void)
@@ -328,6 +341,12 @@ static uint64_t run_one_frame(uint64_t tick_cap)
 		uint8_t cur;
 		sbus_clock();
 		ticks++;
+		/* Stop the instant a watched PC is reached rather than carrying on
+		 * to the frame boundary: for nestest that PC is the end of the
+		 * unattended sweep, and what runs after it is derailed code whose
+		 * jam would otherwise land in this frame's report. */
+		if (watch_pc_hit)
+			return ticks;
 		cur = ppu.PPUSTATUS.reg.vblank;
 		if (cur && !prev)
 			return ticks; /* vblank rising edge -> frame complete */
@@ -662,10 +681,13 @@ int main(int argc, char *argv[])
 	/* nestest's unattended mode is entered at $C000 rather than at the
 	 * ROM's own reset vector, so the vector has to be redirected before
 	 * cpu_reset() reads it. */
-	if (test_mode == TEST_NESTEST &&
-		patch_reset_vector(cart, NESTEST_ENTRY) < 0) {
-		emit_status(rom_path, "error", "cannot_patch_reset_vector", mapper);
-		return EXIT_LOADERR;
+	if (test_mode == TEST_NESTEST) {
+		if (patch_reset_vector(cart, NESTEST_ENTRY) < 0) {
+			emit_status(rom_path, "error", "cannot_patch_reset_vector",
+						mapper);
+			return EXIT_LOADERR;
+		}
+		watch_pc = NESTEST_DONE;
 	}
 
 	fill_cpu_ram((uint8_t)ram_fill); /* deterministic power-on RAM */
@@ -819,7 +841,7 @@ int main(int argc, char *argv[])
 		/* A test ROM that has published its verdict has nothing left to
 		 * say; the `frames_run++` turns this frame's 0-based index into
 		 * the 1-based count the JSON report carries. */
-		if (test_done) {
+		if (test_done || watch_pc_hit) {
 			frames_run++;
 			break;
 		}
@@ -841,10 +863,8 @@ int main(int argc, char *argv[])
 	 * them the moment the sweep finished.
 	 *
 	 * Two bytes of zero only mean "passed" if the sweep actually ran to the
-	 * end. Nothing in the ROM announces that, so the run itself has to
-	 * vouch for it: a CPU that jammed or an emulator that stopped producing
-	 * frames stopped somewhere in the middle, and every test after that
-	 * point simply never wrote its code.
+	 * end, and reaching $C66E is what says so. Without that, every test the
+	 * sweep never got to would read as a test that passed.
 	 */
 	if (test_mode == TEST_NESTEST) {
 		int lo = sbus_read(0x0002);
@@ -852,7 +872,7 @@ int main(int argc, char *argv[])
 
 		test_proto = "nestest";
 		test_code = (hi << 8) | lo;
-		test_done = status_ok && !cpu_jammed;
+		test_done = status_ok && watch_pc_hit;
 		snprintf(test_text, sizeof(test_text), "$02=%02x $03=%02x", lo, hi);
 	}
 
