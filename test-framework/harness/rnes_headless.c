@@ -568,6 +568,7 @@ int main(int argc, char *argv[])
 	const char *test_proto = NULL;	/* protocol that produced a result */
 	int test_code = 0, test_done = 0, test_resets = 0;
 	int reset_pending = 0;			/* frames left before a soft reset */
+	int reset_served = 0;			/* $81 already acted on, awaiting $80 */
 	char test_text[BLARGG_TEXT_MAX];
 
 	test_text[0] = '\0';
@@ -769,11 +770,20 @@ int main(int argc, char *argv[])
 
 				test_proto = "blargg";
 				if (st == BLARGG_RUNNING) {
-					/* still working */
+					/* Back to running: whatever comes next is a fresh
+					 * request, not the one already served. */
+					reset_served = 0;
 				} else if (st == BLARGG_NEED_RESET) {
-					if (test_resets < BLARGG_MAX_RESETS) {
+					/* A reset leaves PRG-RAM alone, so $6000 still reads
+					 * $81 for as long as it takes the ROM to restart and
+					 * write $80 again. Acting on it twice resets the ROM
+					 * a second time at an arbitrary point -- which is
+					 * exactly what a reset test is measuring. Wait for
+					 * $80 before honouring another request. */
+					if (!reset_served && test_resets < BLARGG_MAX_RESETS) {
 						reset_pending = BLARGG_RESET_DELAY;
 						test_resets++;
+						reset_served = 1;
 					}
 				} else {
 					test_code = st;
