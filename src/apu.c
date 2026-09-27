@@ -552,9 +552,15 @@ static void dmc_clock(void)
 		}
 	}
 
-	/* Handle DMC unit clock cycle */
+	/* Handle DMC unit clock cycle.
+	 *
+	 * The rate table is already in CPU cycles, so rate 0 is an output
+	 * change every 428 of them. Firing on passing the period rather than
+	 * on reaching it stretched every rate by one cycle.
+	 * https://www.nesdev.org/wiki/APU_DMC
+	 */
 	timer_fired = 0;
-	if (++apu.dmc.cycles > apu.dmc.period) {
+	if (++apu.dmc.cycles >= apu.dmc.period) {
 		apu.dmc.cycles = 0;
 		timer_fired = 1;
 	}
@@ -1068,7 +1074,7 @@ void apu_reg_write(uint16_t reg, uint8_t value)
 				apu.dmc.dma.current_addr = apu.dmc.dma.sample_addr;
 				apu.dmc.dma.bytes_remaining = apu.dmc.dma.sample_len;
 
-				if (apu.dmc.cycles > apu.dmc.period)
+				if (apu.dmc.cycles >= apu.dmc.period)
 					apu.dmc.cycles = 0;
 			}
 			apu.dmc.out.silence = 0;
