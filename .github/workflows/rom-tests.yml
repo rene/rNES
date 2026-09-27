@@ -12,6 +12,8 @@ on:
 
 jobs:
   rom-tests:
+    # Every step below is a make target, so `make -C test-framework check`
+    # runs this same job locally, with the same flags, before pushing.
     name: run-roms
     runs-on: ubuntu-24.04
 
@@ -35,16 +37,14 @@ jobs:
       # The verdict engine and header decoder are pure Python; these run even
       # when the ROM list is empty, so the job still checks something useful.
       - name: Unit tests
-        run: python3 -m unittest discover -s test-framework/tests -v
+        run: make -C test-framework unit-tests
 
       - name: Run ROM tests
         run: |
-          python3 test-framework/run_tests.py \
-            --rom-list test-framework/roms-ci.txt \
-            --baseline test-framework/baseline.json \
-            --json test-framework/results.json \
-            --junit test-framework/results.xml \
-            --github --no-color
+          make -C test-framework smoke SMOKE_EXTRA="\
+            --json results.json \
+            --junit results.xml \
+            --github --no-color"
 
       # blargg's NES test suites and nestest are not stored in this repository
       # (neither carries a licence -- see test-framework/roms/README.md). They

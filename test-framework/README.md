@@ -49,6 +49,36 @@ Two pieces:
 
 ```sh
 make -C test-framework      # produces test-framework/rnes_headless
+make -C test-framework help # list every target
+```
+
+## Running everything CI runs
+
+`check` is the whole CI job in one target, in the same order and with the same
+flags, so a change can be checked before it is pushed rather than after:
+
+```sh
+make -C test-framework check
+```
+
+It runs `strict`, builds the harness, runs the unit tests, runs the game smoke
+sweep, then fetches and runs the test ROMs — about a minute from scratch, most
+of it the test ROMs. Each step is also a target on its own:
+
+| Target | What it runs |
+|--------|--------------|
+| `unit-tests` | the Python unit tests |
+| `smoke` | the game ROMs (`roms-ci.txt`) against `baseline.json` |
+| `testroms` | blargg's suites + nestest, fetching them first |
+| `testroms-baseline` | re-record the expected test ROM verdicts |
+| `strict` | compile `harness/` with warnings as errors |
+| `sanitize` | rebuild the harness under ASan+UBSan |
+
+`SMOKE_EXTRA` and `TESTROM_EXTRA` add flags to the two ROM runs without
+restating the ones the run needs — which is how CI attaches its reporting:
+
+```sh
+make -C test-framework smoke SMOKE_EXTRA="--json results.json --github"
 ```
 
 ### Extra checking
@@ -291,14 +321,16 @@ Use `--fail-on-new` to also fail on ROMs that fail but aren't in the baseline.
 
 ## CI
 
-[`.github/workflows/rom-tests.yml`](../.github/workflows/rom-tests.yml) builds
-the harness and runs [`roms-ci.txt`](roms-ci.txt) against `baseline.json` on
-every push/PR, emitting GitHub annotations + a step summary and uploading
-`results.json` / `results.xml` (JUnit) artifacts.
+[`.github/workflows/rom-tests.yml`](../.github/workflows/rom-tests.yml) runs on
+every push/PR. Every step in it is one of the make targets above — `strict`,
+the harness build, `unit-tests`, `smoke`, then `testroms` (with the ROMs cached
+between runs, keyed on `testroms.json`) — so
+[`make check`](#running-everything-ci-runs) reproduces the job locally and
+there is no second copy of the flags to drift out of step.
 
-It then fetches the test ROMs (cached between runs, keyed on `testroms.json`)
-and runs [`testroms-ci.txt`](testroms-ci.txt) against `testroms-baseline.json`
-via `make testroms`, so CI and a local run share one set of flags.
+CI adds its reporting through `SMOKE_EXTRA` / `TESTROM_EXTRA`: GitHub
+annotations, a step summary, and `results.json` / `results.xml` (JUnit)
+artifacts.
 
 Commercial ROMs can't be committed, so `roms/` ships empty (that half of CI is
 a green no-op) until you add **license-clean** ROMs — see
@@ -333,6 +365,8 @@ a green no-op) until you add **license-clean** ROMs — see
 ## Tests
 
 ```sh
+make -C test-framework unit-tests
+# or, equivalently:
 python3 -m unittest discover -s test-framework/tests
 ```
 

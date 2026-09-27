@@ -71,7 +71,13 @@ TESTROM_FLAGS := --rom-list testroms-ci.txt \
 	--test-mode auto --no-input \
 	--frames 5400 --warmup 30 --interval 30 --timeout 180
 
-.PHONY: all clean sanitize strict fetch-testroms testroms testroms-baseline
+# --- Game smoke sweep ------------------------------------------------------
+# The other half: real games, judged by the screen/CPU heuristics. roms/ ships
+# empty, so this is a no-op until license-clean ROMs are added to roms-ci.txt.
+SMOKE_FLAGS := --rom-list roms-ci.txt --baseline baseline.json
+
+.PHONY: all clean sanitize strict help unit-tests smoke \
+	fetch-testroms testroms testroms-baseline check
 
 all: $(TARGET)
 
@@ -113,6 +119,48 @@ testroms: $(TARGET) fetch-testroms
 testroms-baseline: $(TARGET) fetch-testroms
 	python3 run_tests.py $(TESTROM_FLAGS) --baseline testroms-baseline.json \
 		--update-baseline
+
+# The Python side: verdict engine, header decoder, ROM-list parsing, and the
+# consistency of testroms.json against the ROM list and the baseline.
+unit-tests:
+	python3 -m unittest discover -s tests
+
+# Run the game ROMs, gated on baseline.json. SMOKE_EXTRA mirrors TESTROM_EXTRA.
+smoke: $(TARGET)
+	python3 run_tests.py $(SMOKE_FLAGS) $(SMOKE_EXTRA)
+
+# Everything .github/workflows/rom-tests.yml runs, in the same order, so a
+# change can be checked before it is pushed rather than after.
+#
+# Sub-makes rather than prerequisites: these are ordered steps, and `make -j`
+# is free to start prerequisites in any order (or at once). Each one aborts
+# the target if it fails.
+check:
+	@echo "== harness compiles clean =="
+	@$(MAKE) --no-print-directory strict
+	@echo "== build headless harness =="
+	@$(MAKE) --no-print-directory all
+	@echo "== unit tests =="
+	@$(MAKE) --no-print-directory unit-tests
+	@echo "== game smoke sweep =="
+	@$(MAKE) --no-print-directory smoke
+	@echo "== test ROMs (blargg + nestest) =="
+	@$(MAKE) --no-print-directory testroms
+	@echo
+	@echo "all checks passed"
+
+help:
+	@echo "all               : Build the headless harness (no SDL)"
+	@echo "check             : Run everything CI runs, in order"
+	@echo "unit-tests        : Run the Python unit tests"
+	@echo "smoke             : Run the game ROMs against baseline.json"
+	@echo "testroms          : Run blargg's suites + nestest (fetches them)"
+	@echo "testroms-baseline : Re-record the expected test ROM verdicts"
+	@echo "fetch-testroms    : Download the test ROMs and verify checksums"
+	@echo "strict            : Compile harness/ with warnings as errors"
+	@echo "sanitize          : Build the harness under ASan+UBSan"
+	@echo "clean             : Remove the built harness"
+	@echo "help              : Show this help"
 
 clean:
 	@rm -f $(TARGET)
