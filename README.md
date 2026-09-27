@@ -180,6 +180,14 @@ from a pinned commit on GitHub and verified against a recorded SHA-256 rather
 than redistributed here. See
 [test-framework/roms/README.md](./test-framework/roms/README.md).
 
+Everything CI checks is available as a single target, so a change can be
+verified before it is pushed:
+
+```sh
+make -C test-framework check    # strict build, unit tests, both ROM suites
+make -C test-framework help     # list every target
+```
+
 See the [test framework documentation](./test-framework/README.md) for the
 complete list of options, the failure heuristics and the CI setup.
 
