@@ -12,8 +12,9 @@
 # a ROM publishes its verdict, so the budget only bounds the ones that
 # never report.
 #
-# A line may carry per-ROM overrides after " | "; nestest needs them
-# because it has no signature to detect and is entered at $C000.
+# A line may carry per-ROM overrides after " | ". The 2005-era suites need
+# test=blargg2005, which reads their result byte at $F8; nestest needs
+# test=nestest, because it has no signature and is entered at $C000.
 
 # apu_reset -- APU: state carried across a soft reset
 roms/external/blargg/apu_reset/4015_cleared.nes
@@ -100,6 +101,26 @@ roms/external/blargg/ppu_vbl_nmi/07-nmi_on_timing.nes
 roms/external/blargg/ppu_vbl_nmi/08-nmi_off_timing.nes
 roms/external/blargg/ppu_vbl_nmi/09-even_odd_frames.nes
 roms/external/blargg/ppu_vbl_nmi/10-even_odd_timing.nes
+
+# sprite_hit_tests -- PPU: sprite 0 hit, including its timing
+roms/external/blargg/sprite_hit_tests/01.basics.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/02.alignment.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/03.corners.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/04.flip.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/05.left_clip.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/06.right_edge.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/07.screen_bottom.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/08.double_height.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/09.timing_basics.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/10.timing_order.nes | test=blargg2005
+roms/external/blargg/sprite_hit_tests/11.edge_timing.nes | test=blargg2005
+
+# sprite_overflow_tests -- PPU: the sprite overflow flag in $2002 bit 5
+roms/external/blargg/sprite_overflow_tests/1.Basics.nes | test=blargg2005
+roms/external/blargg/sprite_overflow_tests/2.Details.nes | test=blargg2005
+roms/external/blargg/sprite_overflow_tests/3.Timing.nes | test=blargg2005
+roms/external/blargg/sprite_overflow_tests/4.Obscure.nes | test=blargg2005
+roms/external/blargg/sprite_overflow_tests/5.Emulator.nes | test=blargg2005
 
 # nestest -- kevtris's CPU test, run unattended from $C000 with the
 # result read out of $02/$03. The whole sweep is over inside one frame;
