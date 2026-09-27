@@ -201,8 +201,12 @@ struct _ppu {
 		struct _OAM_sprite sprites[TOTAL_SPRITES_AUX];
 		uint8_t mem[TOTAL_SPRITES_AUX * sizeof(struct _OAM_sprite)];
 	} OAM_aux;
-	/** Dynamic latch */
+	/** Open-bus decay register (the "dynamic latch") */
 	uint8_t gen_latch;
+	/** Frames left before each decay group falls back to zero */
+	uint8_t decay_timer[3];
+	/** Read buffer behind $2007 */
+	uint8_t vram_buffer;
 	/** Game cartridge */
 	cartridge_t *cartridge;
 	/** Video standard */
