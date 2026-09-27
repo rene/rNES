@@ -492,6 +492,134 @@
     },
     {
       "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/01.basics.nes",
+      "dest": "blargg/sprite_hit_tests/01.basics.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "51819e8e502bd88fe3b7244198a074dbeef2e848f66c587be04b04f1f0d4bb52"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/02.alignment.nes",
+      "dest": "blargg/sprite_hit_tests/02.alignment.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "125bbb3ce1e67370f1f4559c2ad3221e52a3e98880b9789400292b5f3a8b39e6"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/03.corners.nes",
+      "dest": "blargg/sprite_hit_tests/03.corners.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "9dd57776bc6267fe6183c5521d67cbe3fccc6662ae545eb2c419949bf39644d3"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/04.flip.nes",
+      "dest": "blargg/sprite_hit_tests/04.flip.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "5f7142bddb51b7577f93fa22f9f668efebbeea00346d7255089e1863acb9d46a"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/05.left_clip.nes",
+      "dest": "blargg/sprite_hit_tests/05.left_clip.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "69b329658c17b953f149c2f0de77eb272089df22c815bd2fd3d6f43206791c13"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/06.right_edge.nes",
+      "dest": "blargg/sprite_hit_tests/06.right_edge.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "8e6653fcb869e06873e29e5e4423122ea72ba0bf38f3ba9e39f471420db759a4"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/07.screen_bottom.nes",
+      "dest": "blargg/sprite_hit_tests/07.screen_bottom.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "05849956f80267838c5b6556310266b794078a4300841cbb36339fd141905a0b"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/08.double_height.nes",
+      "dest": "blargg/sprite_hit_tests/08.double_height.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "127fd966b6b32d6d88a53c5f59d7e938827783c9ad056091f119be1c4ab21c71"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/09.timing_basics.nes",
+      "dest": "blargg/sprite_hit_tests/09.timing_basics.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "311698c717e50150edd0b5fd0016c41de686463205c20efb5630d6adb90859fd"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/10.timing_order.nes",
+      "dest": "blargg/sprite_hit_tests/10.timing_order.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "0f36bc07bfe51c416e3cc1a5231053572aa6b15aa60e6d2fd0568be49b6dc2e9"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_hit_tests_2005.10.05/11.edge_timing.nes",
+      "dest": "blargg/sprite_hit_tests/11.edge_timing.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "5a7c121f6e76617be88a0a7035c0e402293be5c685c95b97190a8d70835736ab"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_overflow_tests/1.Basics.nes",
+      "dest": "blargg/sprite_overflow_tests/1.Basics.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "1a6782f63ccb3a3dd1aa6a24272036c9c3aa232c2d1ff0b21e872741a3ee4fe2"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_overflow_tests/2.Details.nes",
+      "dest": "blargg/sprite_overflow_tests/2.Details.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "6405a7ff1042fe7a50d9bfe521e43460a3251799425bd3e1863b29b67e7cd587"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_overflow_tests/3.Timing.nes",
+      "dest": "blargg/sprite_overflow_tests/3.Timing.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "2252ec8fc35932b408f409ef9b6863edf084aa871fc10ad180b0ac4c2468ef8c"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_overflow_tests/4.Obscure.nes",
+      "dest": "blargg/sprite_overflow_tests/4.Obscure.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "aebf2199344321465ae0d8dcd81f6c528c7f661f31f1814711365b4e573a8263"
+    },
+    {
+      "source": "nes-test-roms",
+      "path": "sprite_overflow_tests/5.Emulator.nes",
+      "dest": "blargg/sprite_overflow_tests/5.Emulator.nes",
+      "author": "blargg (Shay Green)",
+      "size": 16400,
+      "sha256": "cf994454219696de82794f0b84f2bd63458444d12a1171c85bba8697ab94acb4"
+    },
+    {
+      "source": "nes-test-roms",
       "path": "other/nestest.nes",
       "dest": "nestest/nestest.nes",
       "author": "kevtris (Kevin Horton)",
