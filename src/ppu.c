@@ -297,7 +297,7 @@ ppu_video_t ppu_get_video(void) { return ppu.video; }
  */
 uint8_t ppu_reg_read(uint16_t reg)
 {
-	uint8_t value;
+	uint8_t value = 0;
 
 	switch (reg) {
 	case REG_PPUCTRL: /* PPUCTRL: Write-Only */
