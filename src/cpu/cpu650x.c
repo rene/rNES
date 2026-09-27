@@ -1306,8 +1306,14 @@ void cpu_trigger_nmi(void)
 	s_lock(&nmi_lock);
 	if (CPU.state == CPU_RUNNING) {
 		if (CPU.nmi_pin == 1) {
-			/* Edge detected! */
-			CPU.nmi_trigger = 1;
+			/* Edge detected! An NMI raised while an instruction is performing
+			 * its own bus access cannot be serviced at the end of that
+			 * instruction, so park it until the next boundary.
+			 */
+			if (CPU.bus_access)
+				CPU.nmi_deferred = 1;
+			else
+				CPU.nmi_trigger = 1;
 			CPU.nmi_pin = 0;
 		}
 	}
@@ -1403,6 +1409,7 @@ int cpu_unregister_debug_cb(void)
 void cpu_clock(void)
 {
 	int cross;
+	uint8_t irq_latched;
 
 	s_lock(&cpu_lock);
 
@@ -1421,14 +1428,27 @@ void cpu_clock(void)
 			return;
 		}
 
-		/* Complete the instruction decoded on the previous boundary. Its cycle
-		 * window has now passed, so its bus access (read/write) and execution
-		 * is performed here, on the last cycle. This matches the real 6502,
-		 * which performs the memory access on the last cycle rather than the
-		 * first.
+		if (CPU.nmi_deferred) {
+			/* An NMI was deferred, now it can be executed */
+			CPU.nmi_trigger = 1;
+			CPU.nmi_deferred = 0;
+		}
+
+		/* The IRQ level is sampled at that same point, so latch it here
+		 * rather than re-reading it after the bus access has run.
 		 */
+		irq_latched = (CPU.irq_pin == 0 && !CPU.P.flags.I);
+
 		if (CPU.exec_pending) {
+			/* Complete the instruction decoded on the previous boundary. Its cycle
+			 * window has now passed, so its bus access (read/write) and execution
+			 * is performed here, on the last cycle. This matches the real 6502,
+			 * which performs the memory access on the last cycle rather than the
+			 * first.
+			 */
+			CPU.bus_access = 1;
 			op_codes[opcode].instruction();
+			CPU.bus_access = 0;
 			CPU.exec_pending = 0;
 			if (cpu_debug_cb != NULL) {
 				state_info.opcode      = opcode;
@@ -1445,28 +1465,30 @@ void cpu_clock(void)
 #endif
 		}
 
-		/* Interrupts are polled at the instruction boundary, after the
-		 * instruction that just finished and before fetching the next one.
-		 * NMI has priority over the maskable interrupt.
-		 */
-		if (CPU.nmi_trigger == 1) {
-			do_nmi();
-		} else if (CPU.irq_pin == 0 && !CPU.P.flags.I) {
-			do_irq();
-		} else {
-			/* Decode the next instruction and reserve its cycles, but defer
-			 * its execution to the end of the window.
+		if (CPU.clock_rcycles <= 0) {
+			/* Interrupts are polled at the instruction boundary, after the
+			 * instruction that just finished and before fetching the next one.
+			 * NMI has priority over the maskable interrupt.
 			 */
-			opcode   = sbus_read(CPU.PC++);
-			addrmode = op_codes[opcode].mode;
-			cross    = fetch_operand(op_codes[opcode].mode);
-			CPU.clock_rcycles = op_codes[opcode].clock_cycles;
+			if (CPU.nmi_trigger == 1) {
+				do_nmi();
+			} else if (irq_latched) {
+				do_irq();
+			} else {
+				/* Decode the next instruction and reserve its cycles, but
+				 * defer its execution to the end of the window.
+				 */
+				opcode   = sbus_read(CPU.PC++);
+				addrmode = op_codes[opcode].mode;
+				cross    = fetch_operand(op_codes[opcode].mode);
+				CPU.clock_rcycles = op_codes[opcode].clock_cycles;
 
-			/* Check if need to add a cycle */
-			if (cross && op_codes[opcode].add_cycles == 1)
-				CPU.clock_rcycles++;
+				/* Check if need to add a cycle */
+				if (cross && op_codes[opcode].add_cycles == 1)
+					CPU.clock_rcycles++;
 
-			CPU.exec_pending = 1;
+				CPU.exec_pending = 1;
+			}
 		}
 	}
 
