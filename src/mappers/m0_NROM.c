@@ -173,16 +173,11 @@ static int m0_mapper_init(struct _mapper_t *m, cartridge_t *c)
 		return -EINVAL;
 	}
 
-	/* Check PRG RAM */
-	if (c->rom->header->flag10.ines.prg_ram) {
-		/* Allocates 8 KB of PRG RAM */
-		m0->prg_ram = calloc(sizeof(uint8_t), 0x2000);
-		if (!m0->prg_ram) {
-			free(m0);
-			return -ENOMEM;
-		}
-	} else {
-		m0->prg_ram = m->cartridge->rom->prg_rom;
+	/* Allocates 8 KB of PRG RAM */
+	m0->prg_ram = calloc(sizeof(uint8_t), 0x2000);
+	if (!m0->prg_ram) {
+		free(m0);
+		return -ENOMEM;
 	}
 
 	/* Check CHR RAM */
@@ -211,11 +206,10 @@ static int m0_mapper_finalize(struct _mapper_t *m)
 	struct _m0_mapper *m0 = (struct _m0_mapper *)m->data;
 	cartridge_t *cartridge = m->cartridge;
 
-	/* Free PRG and CHR roms only if they were allocated by the mapper */
-	if (m0->prg_ram != cartridge->rom->prg_rom)
-		free(m0->prg_ram);
+	/* Free CHR rom only if it was allocated by the mapper */
 	if (m0->chr_mem != cartridge->rom->chr_rom)
 		free(m0->chr_mem);
+	free(m0->prg_ram);
 	free(m0);
 	m->data = NULL;
 	return 0;
