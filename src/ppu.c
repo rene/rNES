@@ -368,6 +368,10 @@ void ppu_reg_write(uint16_t reg, uint8_t value)
 	/* Save vblank configuration */
 	uint8_t old_vblank = ppu.PPUCTRL.reg.nmi;
 
+	/* Write to any register should set the latch */
+	if (reg >= REG_PPUCTRL && reg <= REG_PPUDATA)
+		ppu.gen_latch = value;
+
 	switch (reg) {
 	case REG_PPUCTRL: /* PPUCTRL: Write-Only */
 		ppu.PPUCTRL.raw = value;
