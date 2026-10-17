@@ -66,6 +66,12 @@ static int quit_emulation;
 /** Semaphore to wait for GUI initialization */
 sem_t wait_gui;
 
+/** Parameters to GUI thread */
+struct _gui_args {
+	int scale;
+	int fullscreen;
+};
+
 /* Platform specific tuning */
 #ifdef _WIN32
 #include <timeapi.h>
@@ -272,9 +278,11 @@ static void show_version(const char *progname)
 static void show_help(const char *progname)
 {
 	show_version(progname);
-	log_info("Use: %s [-s <scale_factor>] [-d] [-h] <rom_file>\n\n", progname);
+	log_info("Use: %s [-s <scale_factor>] [-f] [-d] [-h] <rom_file>\n\n",
+			 progname);
 	log_info("    -s, --scale      Set screen scale factor (default: %d)\n",
 			 DEFAULT_SCALE);
+	log_info("    -f, --fullscreen Enable full screen mode\n");
 	log_info(
 		"    -d, --debug      Show debug messages (it can be extremely slow!)\n");
 	log_info(
@@ -297,13 +305,13 @@ static void *emu_th_loop(void *args)
 
 /**
  * GUI emulation thread (main routine)
- * @param args Pointer to an integer variable with scale factor
+ * @param args Pointer to a struct with the parameters for the GUI thread
  */
 static void *gui_th_loop(void *args)
 {
-	int *scale = (int *)args;
+	struct _gui_args *gargs = (struct _gui_args *)args;
 
-	if (gui_init(*scale) < 0) {
+	if (gui_init(gargs->scale, gargs->fullscreen) < 0) {
 		log_err("Could not initialize GUI!\n");
 		return NULL;
 	}
@@ -317,21 +325,24 @@ int main(int argc, char *const argv[])
 {
 	static struct option long_opts[] = {{"help", no_argument, NULL, 'h'},
 										{"scale", required_argument, NULL, 's'},
+										{"fullscreen", no_argument, NULL, 'f'},
 										{"info", no_argument, NULL, 'i'},
 										{"debug", no_argument, NULL, 'd'},
 										{"version", no_argument, NULL, 'v'},
 										{"license", no_argument, NULL, 'l'},
 										{NULL, no_argument, NULL, 0}};
-	const char *opt_string = "hs:idvl";
+	const char *opt_string = "hs:fidvl";
 	char *romfile;
-	char debug, info;
+	char debug, info, fullscreen;
 	int opt, optli, scale, ret;
 	pthread_t th_gui, th_emu;
 	pthread_attr_t attr_gui, attr_emu;
+	struct _gui_args gargs;
 
 	/* Handle command line */
 	debug = 0;
 	info = 0;
+	fullscreen = 0;
 	scale = DEFAULT_SCALE;
 	while ((opt = getopt_long(argc, argv, opt_string, long_opts, &optli)) !=
 		   -1) {
@@ -346,6 +357,10 @@ int main(int argc, char *const argv[])
 
 		case 'd':
 			debug = 1;
+			break;
+
+		case 'f':
+			fullscreen = 1;
 			break;
 
 		case 'v':
@@ -386,6 +401,8 @@ int main(int argc, char *const argv[])
 		log_err("Scale factor must be a positive integer.\n\n");
 		return EXIT_FAILURE;
 	}
+	gargs.scale = scale;
+	gargs.fullscreen = fullscreen;
 
 	/* Load ROM file */
 	log_info("Loading ROM: %s ...\n", romfile);
@@ -443,7 +460,7 @@ int main(int argc, char *const argv[])
 
 	/* Create and initialize GUI thread */
 	pthread_attr_init(&attr_gui);
-	pthread_create(&th_gui, &attr_gui, &gui_th_loop, &scale);
+	pthread_create(&th_gui, &attr_gui, &gui_th_loop, &gargs);
 
 	/* Wait GUI to get ready */
 	sem_wait(&wait_gui);

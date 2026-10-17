@@ -90,7 +90,7 @@ ssize_t load_file(const char *pathname, uint8_t **data);
 
 /* GUI functions */
 
-int gui_init(int scale);
+int gui_init(int scale, int fullscreen);
 int gui_destroy(void);
 int gui_main_loop(void);
 void gui_set_pixel(int x, int y, RGB_t color);
@@ -98,6 +98,7 @@ RGB_t gui_get_pixel(int x, int y);
 void gui_draw_text(int x, int y, const char *text, RGB_t color);
 int gui_get_scale(void);
 int gui_set_scale(int scale);
+int gui_set_fullscreen(uint8_t fullscreen);
 int gui_is_running(void);
 uint8_t gui_read_joypad(int joypad);
 

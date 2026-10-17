@@ -100,6 +100,8 @@ struct _RNES_SDL_GUI {
 	int height;
 	/** Video scale */
 	int scale;
+	/** Fullscreen mode */
+	uint8_t fullscreen;
 	/** Control keys */
 	uint8_t keys[16];
 	/** GUI's state */
@@ -126,14 +128,16 @@ const RGB_t C_BLUE = {.R = 0x00, .G = 0x00, .B = 0xff};
 
 /**
  * Initialize GUI
- * @param [in] Screen scale factor (if 0, set default scale)
+ * @param [in] scale Screen scale factor (0: set default scale)
+ * @param [in] fullscreen Full screen mode (0: windowed, 1: full screen)
  * @return 0 on success, -1 otherwise.
  */
-int gui_init(int scale)
+int gui_init(int scale, int fullscreen)
 {
 	rnes_gui.win = NULL;
 	rnes_gui.texture = NULL;
 	rnes_gui.renderer = NULL;
+	rnes_gui.fullscreen = fullscreen;
 	rnes_gui.state = GUI_STOPPED;
 
 	/* Setup Audio specs */
@@ -191,7 +195,7 @@ int gui_init(int scale)
 	}
 
 	/* Check scale */
-	if (scale == 0) {
+	if (scale <= 0) {
 		rnes_gui.width = SCREEN_WIDTH;
 		rnes_gui.height = SCREEN_HEIGHT;
 		rnes_gui.scale = 1;
@@ -208,6 +212,18 @@ int gui_init(int scale)
 	/* Create Hardware Accelerated Renderer */
 	rnes_gui.renderer =
 		SDL_CreateRenderer(rnes_gui.win, -1, SDL_RENDERER_ACCELERATED);
+	if (rnes_gui.renderer == NULL) {
+		/* Fallback into software render if hardware is not available */
+		rnes_gui.renderer =
+			SDL_CreateRenderer(rnes_gui.win, -1, SDL_RENDERER_SOFTWARE);
+	}
+	if (rnes_gui.renderer != NULL) {
+		/* Keep the aspect ratio and letterbox in fullscreen */
+		SDL_RenderSetLogicalSize(rnes_gui.renderer, rnes_gui.width,
+								 rnes_gui.height);
+	}
+	/* Set scaling hint to keep pixels sharp */
+	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 	/* Create Streaming Texture */
 	rnes_gui.texture = SDL_CreateTexture(
 		rnes_gui.renderer, SDL_PIXELFORMAT_ARGB8888,
@@ -217,15 +233,17 @@ int gui_init(int scale)
 		rnes_gui.renderer, SDL_PIXELFORMAT_ARGB8888,
 		SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-	/* Set scaling hint to keep pixels sharp */
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 	if (rnes_gui.texture == NULL || rnes_gui.renderer == NULL ||
 		rnes_gui.text_texture == NULL) {
 		SDL_PauseAudio(1);
 		TTF_Quit();
 		SDL_Quit();
+		return -1;
 	}
 	SDL_SetTextureBlendMode(rnes_gui.text_texture, SDL_BLENDMODE_BLEND);
+
+	/* Check/set full screen mode */
+	gui_set_fullscreen(rnes_gui.fullscreen);
 
 	SDL_PauseAudio(0);
 	return 0;
@@ -320,6 +338,16 @@ int gui_main_loop(void)
 				case SDLK_q:
 					quit = 1;
 					break;
+				case SDLK_F12:
+					/* Toggle fullscreen mode */
+					if (main_ev.type == SDL_KEYDOWN && !main_ev.key.repeat) {
+						if (rnes_gui.fullscreen) {
+							gui_set_fullscreen(0);
+						} else {
+							gui_set_fullscreen(1);
+						}
+					}
+					break;
 				}
 			}
 		}
@@ -387,6 +415,34 @@ int gui_set_scale(int scale)
 	rnes_gui.width = SCREEN_WIDTH * scale;
 	rnes_gui.height = SCREEN_HEIGHT * scale;
 	SDL_SetWindowSize(rnes_gui.win, rnes_gui.width, rnes_gui.height);
+	return 0;
+}
+
+/**
+ * Enable or disable full screen mode
+ *
+ * Uses the desktop resolution and letterboxes the picture to keep the NES
+ * aspect ratio. The mouse cursor is hidden while in full screen mode.
+ * @param [in] fullscreen 0: windowed, otherwise full screen
+ * @return 0 on success, -1 otherwise.
+ */
+int gui_set_fullscreen(uint8_t fullscreen)
+{
+	uint32_t flags = 0;
+	uint32_t cursor = SDL_ENABLE;
+
+	if (fullscreen) {
+		flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
+		cursor = SDL_DISABLE;
+	}
+
+	if (SDL_SetWindowFullscreen(rnes_gui.win, flags) < 0) {
+		log_err("Cannot change fullscreen mode: %s\n", SDL_GetError());
+		return -1;
+	}
+	SDL_ShowCursor(cursor);
+
+	rnes_gui.fullscreen = fullscreen;
 	return 0;
 }
 
