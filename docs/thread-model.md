@@ -42,7 +42,7 @@ main()
   │
   ├── pthread_create(th_gui)  ──► gui_th_loop()
   │       │
-  │       ├── gui_init(scale)         ← opens window + audio device
+  │       ├── gui_init(scale, fs)     ← opens window + audio device
   │       ├── sem_post(&wait_gui)     ← unblocks main thread
   │       └── gui_main_loop()         ← blocks here
   │
@@ -87,11 +87,11 @@ host CPU allows, relying solely on audio backpressure for real-time pacing.
 
 ```c
 /** GUI emulation thread (main routine)
- *  @param args  Pointer to an integer variable with scale factor */
+ *  @param args  Pointer to a struct _gui_args (scale and fullscreen) */
 static void *gui_th_loop(void *args)
 {
-    int *scale = (int *)args;
-    if (gui_init(*scale) < 0) {
+    struct _gui_args *gargs = (struct _gui_args *)args;
+    if (gui_init(gargs->scale, gargs->fullscreen) < 0) {
         log_err("Could not initialize GUI!\n");
         return NULL;
     }
@@ -104,7 +104,7 @@ static void *gui_th_loop(void *args)
 
 `gui_main_loop()` is responsible for:
 
-1. Polling `SDL_PollEvent` and updating the joypad bitmasks used by `gui_read_joypad()`.
+1. Polling `SDL_PollEvent`, updating the joypad bitmasks used by `gui_read_joypad()`, and handling the F12 full screen toggle.
 2. Uploading the pixel array (written by `gui_set_pixel`) into the SDL texture and calling `SDL_RenderPresent` once per frame.
 3. Returning when the user closes the window or otherwise requests a quit.
 

@@ -37,15 +37,31 @@ To run rNES just call:
 The following options are supported:
 
 ```text
-Use: ./rNES [-s <scale_factor>] [-d] [-h] <rom_file>
+Use: ./rNES [-s <scale_factor>] [-f] [-d] [-h] <rom_file>
 
     -s, --scale      Set screen scale factor (default: 2)
+    -f, --fullscreen Enable full screen mode
     -d, --debug      Show debug messages (it can be extremely slow!)
     -i, --info       Just show ROM information (don't play the game)
     -v, --version    Show version
     -l, --license    Show license
     -h, --help       Show this help
 ```
+
+### Keyboard controls
+
+| Key         | Action                      |
+|-------------|-----------------------------|
+| Arrow keys  | D-pad                       |
+| Z           | A                           |
+| X           | B                           |
+| A           | Start                       |
+| S           | Select                      |
+| F12         | Toggle full screen mode     |
+| Q           | Quit                        |
+
+In full screen mode the picture keeps the NES aspect ratio and is letterboxed
+to fit the display.
 
 ## Windows (cross-compile)
 

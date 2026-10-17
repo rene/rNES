@@ -102,7 +102,7 @@ The caller frees `*data`.
 ### GUI
 
 ```c
-int     gui_init(int scale);
+int     gui_init(int scale, int fullscreen);
 int     gui_destroy(void);
 int     gui_main_loop(void);
 void    gui_set_pixel(int x, int y, RGB_t color);
@@ -110,6 +110,7 @@ RGB_t   gui_get_pixel(int x, int y);
 void    gui_draw_text(int x, int y, const char *text, RGB_t color);
 int     gui_get_scale(void);
 int     gui_set_scale(int scale);
+int     gui_set_fullscreen(uint8_t fullscreen);
 int     gui_is_running(void);
 uint8_t gui_read_joypad(int joypad);
 ```
@@ -216,8 +217,16 @@ error code.
 ### 3. Implement `gui_init` / `gui_destroy`
 
 - Open a framebuffer or window of `256*scale × 240*scale` pixels.
+- If `fullscreen` is non-zero, switch to full screen mode (see
+  `gui_set_fullscreen`).
 - Inside `gui_init`, call `audio_init()` and `audio_play()`.
 - Return `0` on success, `-1` on failure.
+
+`gui_set_fullscreen(1)` switches to full screen mode and `gui_set_fullscreen(0)`
+returns to a window. Keep the 256×240 aspect ratio and letterbox the picture
+rather than stretching it. The SDL port uses `SDL_WINDOW_FULLSCREEN_DESKTOP`
+with `SDL_RenderSetLogicalSize()`. Platforms with a fixed display, where the
+choice does not apply, may ignore the request and return `0`.
 
 ### 4. Implement the pixel buffer (`gui_set_pixel` / `gui_get_pixel`)
 
