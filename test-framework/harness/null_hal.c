@@ -32,9 +32,10 @@ static int gui_running;
 
 const uint32_t *null_framebuffer(void) { return framebuffer; }
 
-int gui_init(int scale)
+int gui_init(int scale, int fullscreen)
 {
 	(void)scale;
+	(void)fullscreen;
 	memset(framebuffer, 0, sizeof(framebuffer));
 	gui_running = 1;
 	return 0;
@@ -87,6 +88,12 @@ int gui_get_scale(void) { return 1; }
 int gui_set_scale(int scale)
 {
 	(void)scale;
+	return 0;
+}
+
+int gui_set_fullscreen(uint8_t fullscreen)
+{
+	(void)fullscreen;
 	return 0;
 }
 
