@@ -1042,7 +1042,7 @@ void apu_reg_write(uint16_t reg, uint8_t value)
 		else
 			apu.frm_seq.mode = 1;
 
-		if (apu.frm_seq.mode || (value & 0x40)) {
+		if ((value & 0x40)) {
 			apu.frm_seq.irq_inhibit = 1;
 			apu.frm_seq.irq_flag = 0;
 			cpu_clear_irq();
