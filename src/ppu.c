@@ -374,8 +374,10 @@ void ppu_reg_write(uint16_t reg, uint8_t value)
 		ppu.iregs.t.reg.bits.nametable_X = ppu.PPUCTRL.reg.nametable_X;
 		ppu.iregs.t.reg.bits.nametable_Y = ppu.PPUCTRL.reg.nametable_Y;
 		/* Check for NMI */
-		if (old_vblank == 0 && ppu.PPUCTRL.reg.nmi == 1 &&
-			ppu.PPUSTATUS.reg.vblank == 1)
+		if (ppu.PPUCTRL.reg.nmi == 0)
+			cpu_clear_nmi();
+		else if (old_vblank == 0 && ppu.PPUCTRL.reg.nmi == 1 &&
+				 ppu.PPUSTATUS.reg.vblank == 1)
 			cpu_trigger_nmi();
 		break;
 
