@@ -639,7 +639,7 @@ void ppu_clock(void)
 		}
 
 		/* Clear OAMADDR */
-		if (ppu.cycle >= 257 && ppu.cycle <= 320)
+		if (is_rendering() && ppu.cycle >= 257 && ppu.cycle <= 320)
 			ppu.OAMADDR = 0;
 
 		/* Evaluate sprites to the next scanline */
