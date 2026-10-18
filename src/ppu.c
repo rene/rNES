@@ -643,7 +643,7 @@ void ppu_clock(void)
 			ppu.OAMADDR = 0;
 
 		/* Evaluate sprites to the next scanline */
-		if (ppu.cycle == 256) {
+		if (ppu.cycle == 256 && ppu.scanline <= 239) {
 			/* Clear secondary OAM */
 			for (i = 0; i < sizeof(ppu.OAM_aux); i++)
 				ppu.OAM_aux.mem[i] = 0xff;
