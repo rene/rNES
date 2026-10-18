@@ -398,8 +398,7 @@ void ppu_reg_write(uint16_t reg, uint8_t value)
 
 	case REG_OAMDATA: /* OAMDATA: Read/Write */
 		/* Ignore writes during rendering or pre-rendering */
-		if ((ppu.PPUMASK.reg.show_background || ppu.PPUMASK.reg.show_sprites) &&
-			(ppu.scanline < 240 || ppu.scanline == 261))
+		if (is_rendering() && (ppu.scanline < 240 || ppu.scanline == 261))
 			break;
 		ppu.OAM.mem[ppu.OAMADDR] = value;
 		ppu.OAMADDR++;
