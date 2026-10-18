@@ -321,6 +321,9 @@ uint8_t ppu_reg_read(uint16_t reg)
 
 	case REG_OAMDATA: /* OAMDATA: Read/Write */
 		value = ppu.OAM.mem[ppu.OAMADDR];
+		/* If we have byte 2 of a sprite, reserved bits must be zero */
+		if ((ppu.OAMADDR & 0x03) == 0x02)
+			value &= 0xe3;
 		ppu.gen_latch = value;
 		break;
 
