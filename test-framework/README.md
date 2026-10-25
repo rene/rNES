@@ -220,6 +220,10 @@ off and `input=start,select` sets the buttons. An unknown option is an error
 rather than a silent default — a ROM run under flags nobody asked for would
 have the resulting verdict recorded as its baseline.
 
+A ROM's baseline key is its filename, so two ROMs in one list must not share
+one; the list is refused if they do. Give one of them a different `dest` name
+in `testroms.json`.
+
 ## What counts as a failure
 
 Applied to the *post-warmup* samples; a signal only fails a ROM if it holds for
