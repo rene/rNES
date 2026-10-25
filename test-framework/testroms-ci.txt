@@ -1,4 +1,5 @@
-# Test ROMs for the GitHub CI job -- blargg's NES suites and nestest.
+# Test ROMs for the GitHub CI job -- blargg's NES suites, Bisqwit's
+# ppu_read_buffer and nestest.
 #
 # These files are NOT in the repository (see roms/README.md); fetch them
 # first, then run the suite:
@@ -13,7 +14,8 @@
 # never report.
 #
 # A line may carry per-ROM overrides after " | ". The 2005-era suites need
-# test=blargg2005, which reads their result byte at $F8; nestest needs
+# test=blargg2005, which reads their result byte at $F8 -- or at $F0 with
+# result-addr=0xf0, for the July/September 2005 builds; nestest needs
 # test=nestest, because it has no signature and is entered at $C000.
 
 # apu_reset -- APU: state carried across a soft reset
@@ -121,6 +123,59 @@ roms/external/blargg/sprite_overflow_tests/2.Details.nes | test=blargg2005
 roms/external/blargg/sprite_overflow_tests/3.Timing.nes | test=blargg2005
 roms/external/blargg/sprite_overflow_tests/4.Obscure.nes | test=blargg2005
 roms/external/blargg/sprite_overflow_tests/5.Emulator.nes | test=blargg2005
+
+# apu_2005 -- APU: blargg's 2005 suite (length counter, frame IRQ, reset)
+# timing. Its runtime keeps the result at $F0, not $F8.
+roms/external/blargg/apu_2005/01.len_ctr.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/02.len_table.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/03.irq_flag.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/04.clock_jitter.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/05.len_timing_mode0.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/06.len_timing_mode1.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/07.irq_flag_timing.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/08.irq_timing.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/09.reset_timing.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/10.len_halt_timing.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/apu_2005/11.len_reload_timing.nes | test=blargg2005 result-addr=0xf0
+
+# ppu_tests_2005 -- PPU: palette and sprite RAM, VRAM access, power-up
+# palette, VBL clear time. Result at $F0, like apu_2005.
+roms/external/blargg/ppu_tests_2005/palette_ram.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/ppu_tests_2005/power_up_palette.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/ppu_tests_2005/sprite_ram.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/ppu_tests_2005/vbl_clear_time.nes | test=blargg2005 result-addr=0xf0
+roms/external/blargg/ppu_tests_2005/vram_access.nes | test=blargg2005 result-addr=0xf0
+
+# branch_timing_tests -- CPU: cycles taken by branches, page crossing included
+roms/external/blargg/branch_timing_tests/1.Branch_Basics.nes | test=blargg2005
+roms/external/blargg/branch_timing_tests/2.Backward_Branch.nes | test=blargg2005
+roms/external/blargg/branch_timing_tests/3.Forward_Branch.nes | test=blargg2005
+
+# vbl_nmi_timing -- PPU: blargg's 2005 VBL flag and NMI timing suite
+roms/external/blargg/vbl_nmi_timing/1.frame_basics.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/2.vbl_timing.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/3.even_odd_frames.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/4.vbl_clear_timing.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/5.nmi_suppression.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/6.nmi_disable.nes | test=blargg2005
+roms/external/blargg/vbl_nmi_timing/7.nmi_timing.nes | test=blargg2005
+
+# mmc3_irq_tests -- mapper 4: the MMC3 scanline counter and its IRQ.
+# 2.Details.nes is renamed: sprite_overflow_tests has one too, and a
+# baseline key is a filename.
+roms/external/blargg/mmc3_irq_tests/1.Clocking.nes | test=blargg2005
+roms/external/blargg/mmc3_irq_tests/2.MMC3_Details.nes | test=blargg2005
+roms/external/blargg/mmc3_irq_tests/3.A12_clocking.nes | test=blargg2005
+roms/external/blargg/mmc3_irq_tests/4.Scanline_timing.nes | test=blargg2005
+roms/external/blargg/mmc3_irq_tests/5.MMC3_rev_A.nes | test=blargg2005
+roms/external/blargg/mmc3_irq_tests/6.MMC3_rev_B.nes | test=blargg2005
+
+# sprdma_and_dmc_dma -- CPU: cycles stolen when sprite and DMC DMA overlap
+roms/external/blargg/sprdma_and_dmc_dma/sprdma_and_dmc_dma.nes
+roms/external/blargg/sprdma_and_dmc_dma/sprdma_and_dmc_dma_512.nes
+
+# ppu_read_buffer -- PPU: the $2007 read buffer (Bisqwit's test, mapper 3)
+roms/external/bisqwit/ppu_read_buffer/test_ppu_read_buffer.nes
 
 # nestest -- kevtris's CPU test, run unattended from $C000 with the
 # result read out of $02/$03. The whole sweep is over inside one frame;

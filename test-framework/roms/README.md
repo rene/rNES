@@ -55,9 +55,11 @@ with that. These ROMs are not:
 - **blargg's NES test ROMs** (Shay Green) ship a `readme.txt` describing the
   test and nothing else. There is no copyright notice, no licence, and no
   statement of permission to redistribute.
+- **ppu_read_buffer** (Joel Yliluoma, "Bisqwit") is the same: a long
+  `readme.txt` and source, no licence.
 - **nestest** (Kevin Horton) is the same: `nestest.txt` documents the failure
   codes and says nothing about licensing.
-- The upstream archive that hosts both has no repository-wide `LICENSE` file
+- The upstream archive that hosts them all has no repository-wide `LICENSE` file
   either; it is a community mirror, not a relicensing.
 
 Both are freely downloadable and are the standard way to validate an NES

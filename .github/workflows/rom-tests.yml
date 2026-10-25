@@ -46,9 +46,10 @@ jobs:
             --junit results.xml \
             --github --no-color"
 
-      # blargg's NES test suites and nestest are not stored in this repository
-      # (neither carries a licence -- see test-framework/roms/README.md). They
-      # are downloaded from a pinned upstream commit and checked against the
+      # The test ROMs (blargg's suites, Bisqwit's ppu_read_buffer, nestest) are
+      # not stored in this repository (none carries a licence -- see
+      # test-framework/roms/README.md). They are downloaded from a pinned
+      # christopherpow/nes-test-roms commit and checked against the
       # SHA-256 of every file in testroms.json, so the bytes CI runs are the
       # bytes the baseline was recorded from.
       - name: Cache test ROMs
@@ -59,7 +60,7 @@ jobs:
 
       # Unlike the smoke sweep above, these ROMs report their own verdict;
       # `make testroms` carries the flags that reads it (see the Makefile).
-      - name: Run test ROMs (blargg + nestest)
+      - name: Run test ROMs (nes-test-roms)
         run: |
           make -C test-framework testroms TESTROM_EXTRA="\
             --json testroms-results.json \
