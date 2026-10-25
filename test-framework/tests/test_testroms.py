@@ -103,6 +103,14 @@ class TestTestModeFlag(unittest.TestCase):
         cmd = self.capture(test_mode="nestest")
         self.assertEqual(cmd[cmd.index("--test") + 1], "nestest")
 
+    def test_result_addr_is_passed(self):
+        cmd = self.capture(test_mode="blargg2005", result_addr=0xf0)
+        self.assertEqual(cmd[cmd.index("--result-addr") + 1], "0xf0")
+
+    def test_result_addr_defaults_to_the_harness(self):
+        self.assertNotIn("--result-addr",
+                         self.capture(test_mode="blargg2005"))
+
 
 class TestRomOptions(unittest.TestCase):
     def test_options_map_to_runconfig_fields(self):
@@ -121,6 +129,10 @@ class TestRomOptions(unittest.TestCase):
     def test_ram_fill_accepts_hex(self):
         self.assertEqual(parse_rom_options("ram-fill=0xff"),
                          {"ram_fill": 0xff})
+
+    def test_result_addr_accepts_hex(self):
+        self.assertEqual(parse_rom_options("result-addr=0xf0"),
+                         {"result_addr": 0xf0})
 
     def test_unknown_option_is_an_error(self):
         # Silently ignoring it would run the ROM under flags nobody asked

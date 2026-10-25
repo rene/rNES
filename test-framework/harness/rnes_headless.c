@@ -125,7 +125,8 @@ static int popcount_pc_seen(void)
  *   is no signature to watch for, so this mode is requested explicitly.
  *
  * blargg's 2005-era runtime (sprite_hit_tests, sprite_overflow_tests, ...)
- *   Predates the $6000 report. It keeps a result byte at $F8 -- the number
+ *   Predates the $6000 report. It keeps a result byte at $F8 ($F0 in the
+ *   July/September 2005 builds, see --result-addr) -- the number
  *   of the test being run, replaced by 1 if every test passed -- prints it
  *   on screen, beeps it, and then parks the CPU in a `jmp` to itself. $F8
  *   holds the current test number throughout, so it says nothing about
@@ -140,7 +141,7 @@ enum test_mode {
 	TEST_OFF = 0,	/* judge by screen/CPU heuristics alone (default) */
 	TEST_AUTO,		/* watch for blargg's $6000 report */
 	TEST_NESTEST,	/* enter nestest at $C000, read its $02/$03 result */
-	TEST_BLARGG2005 /* read the $F8 result of blargg's older runtime */
+	TEST_BLARGG2005 /* read the result byte of blargg's older runtime */
 };
 
 #define BLARGG_STATUS 0x6000
@@ -165,7 +166,13 @@ enum test_mode {
  */
 #define NESTEST_DONE 0xc66e
 
-/* blargg's older runtime: result byte, and the value meaning "passed". */
+/*
+ * blargg's older runtime: default result byte, and the value meaning
+ * "passed". The runtime moved its result byte during 2005: the October
+ * suites (sprite_hit_tests, sprite_overflow_tests, vbl_nmi_timing, ...)
+ * keep it at $F8, the July/September ones (blargg_apu_2005.07.30,
+ * blargg_ppu_tests_2005.09.15b) at $F0. --result-addr picks the other one.
+ */
 #define B2005_RESULT 0x00f8
 #define B2005_PASSED 1
 /*
@@ -448,7 +455,8 @@ static void usage(const char *argv0)
 	fprintf(stderr,
 			"Usage: %s [--frames N] [--warmup N] [--interval N] "
 			"[--freeze-frames N] [--blank-frames N] [--buttons list] "
-			"[--ram-fill BYTE] [--test MODE] [--no-input] [--json] "
+			"[--ram-fill BYTE] [--test MODE] [--result-addr ADDR] "
+			"[--no-input] [--json] "
 			"<rom_file>\n"
 			"  --freeze-frames N  if the screen stays static, keep running up "
 			"to N frames\n"
@@ -468,8 +476,11 @@ static void usage(const char *argv0)
 			"$6000 report),\n"
 			"                     nestest (enter at $C000, read $02/$03),\n"
 			"                     blargg2005 (older runtime, result at "
-			"$F8)\n",
-			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS, DEF_RAM_FILL);
+			"$F8)\n"
+			"  --result-addr ADDR where blargg2005 reads its result (default "
+			"0x%02x;\n"
+			"                     the July/Sept 2005 suites use 0xf0)\n",
+			argv0, DEF_BLANK_FRAMES, DEF_BUTTONS, DEF_RAM_FILL, B2005_RESULT);
 }
 
 /* Map a button name to its raw controller_reg_t byte (0 if unknown). */
@@ -581,6 +592,7 @@ int main(int argc, char *argv[])
 	uint64_t base_hash = 0;
 	const char *buttons_arg = DEF_BUTTONS;
 	int ram_fill = DEF_RAM_FILL;
+	uint16_t b2005_result = B2005_RESULT;
 	uint8_t btn_masks[MAX_BUTTONS];
 	int n_buttons = 0;
 	rom_t *rom = NULL;
@@ -613,6 +625,8 @@ int main(int argc, char *argv[])
 			buttons_arg = argv[++i];
 		} else if (!strcmp(argv[i], "--ram-fill") && i + 1 < argc) {
 			ram_fill = (int)strtol(argv[++i], NULL, 0) & 0xff;
+		} else if (!strcmp(argv[i], "--result-addr") && i + 1 < argc) {
+			b2005_result = (uint16_t)strtol(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "--test") && i + 1 < argc) {
 			const char *mode = argv[++i];
 			if (!strcmp(mode, "off"))
@@ -829,7 +843,7 @@ int main(int argc, char *argv[])
 			else
 				parked_frames = 0;
 			if (parked_frames >= B2005_PARK_FRAMES) {
-				uint8_t res = sbus_read(B2005_RESULT);
+				uint8_t res = sbus_read(b2005_result);
 
 				test_proto = "blargg2005";
 				test_code = (res == B2005_PASSED) ? 0 : res;
@@ -838,7 +852,8 @@ int main(int argc, char *argv[])
 					snprintf(test_text, sizeof(test_text), "passed");
 				else
 					snprintf(test_text, sizeof(test_text),
-							 "failed #%u ($F8=%02x)", res, res);
+							 "failed #%u ($%02X=%02x)", res, b2005_result,
+							 res);
 			}
 		}
 
@@ -926,9 +941,10 @@ int main(int argc, char *argv[])
 	 * sweep never got to would read as a test that passed.
 	 */
 	/* Never parked: the run used up its frames without reporting. Say so
-	 * with whatever $F8 held, which names the test it was stuck on. */
+	 * with whatever the result byte held, which names the test it was
+	 * stuck on. */
 	if (test_mode == TEST_BLARGG2005 && !test_done) {
-		uint8_t res = sbus_read(B2005_RESULT);
+		uint8_t res = sbus_read(b2005_result);
 
 		test_proto = "blargg2005";
 		test_code = res;

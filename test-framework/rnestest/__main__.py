@@ -130,6 +130,7 @@ _ROM_OPTIONS = {
     "interval": ("interval", int),
     "timeout": ("timeout", float),
     "ram-fill": ("ram_fill", lambda v: int(v, 0)),
+    "result-addr": ("result_addr", lambda v: int(v, 0)),
 }
 
 #: Separator between a ROM path and its options. Deliberately not plain

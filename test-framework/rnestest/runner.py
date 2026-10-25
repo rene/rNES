@@ -29,6 +29,9 @@ class RunConfig:
     #   "nestest" enter nestest at $C000 and read its $02/$03 result
     #   "blargg2005" blargg's older runtime, result byte at $F8
     test_mode: str = "off"
+    # Where "blargg2005" reads its result byte. None = the harness default
+    # ($F8); the July/September 2005 suites keep it at $F0.
+    result_addr: Optional[int] = None
 
 
 #: ``--test`` modes the harness accepts.
@@ -74,6 +77,8 @@ def run_rom(rom_path: str, key: str, cfg: RunConfig) -> RunResult:
         cmd += ["--ram-fill", str(cfg.ram_fill)]
     if cfg.test_mode and cfg.test_mode != "off":
         cmd += ["--test", cfg.test_mode]
+    if cfg.result_addr is not None:
+        cmd += ["--result-addr", hex(cfg.result_addr)]
     cmd.append(rom_path)
     try:
         proc = subprocess.run(
