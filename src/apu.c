@@ -506,6 +506,8 @@ static void frm_seq_clock(void)
 			/* PS: We do nothing in Step 3 */
 		} else if (apu.frm_seq.cycles == frm_cycles[apu.type][4]) {
 			/* Step 4 */
+			frm_QuarterFrame();
+			frm_HalfFrame();
 			apu.frm_seq.cycles = 0;
 			return;
 		}
