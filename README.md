@@ -155,11 +155,13 @@ your own local collection when testing a change.
 
 ## Test ROMs
 
-Alongside the game sweep, CI runs the NESdev test suites — blargg's CPU, PPU
-and APU tests and kevtris's **nestest**. These do not need any heuristic: they
-exercise documented hardware behaviour and report whether they passed, which
-the framework reads straight out of the emulated machine (blargg's status byte
-at `$6000`, nestest's result bytes at `$02`/`$03`).
+Alongside the game sweep, CI runs the NESdev test suites — blargg's CPU, PPU,
+APU and MMC3 tests, Bisqwit's PPU read-buffer test and kevtris's **nestest**,
+112 ROMs from [nes-test-roms](https://github.com/christopherpow/nes-test-roms).
+These do not need any heuristic: they exercise documented hardware behaviour
+and report whether they passed, which the framework reads straight out of the
+emulated machine (blargg's status byte at `$6000`, the result byte of his
+2005-era runtime at `$F8` or `$F0`, nestest's result bytes at `$02`/`$03`).
 
 ```sh
 make -C test-framework testroms
@@ -174,8 +176,8 @@ That fetches the ROMs if they are not already there and runs them:
              any clocks 09-even_odd_frames Failed #2
 ```
 
-The test ROMs are **not** stored in this repository. Neither blargg's suites
-nor nestest ships a licence, and rNES is BSD-3-Clause, so they are downloaded
+The test ROMs are **not** stored in this repository. None of them ships a
+licence, and rNES is BSD-3-Clause, so they are downloaded
 from a pinned commit on GitHub and verified against a recorded SHA-256 rather
 than redistributed here. See
 [test-framework/roms/README.md](./test-framework/roms/README.md).
