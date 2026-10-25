@@ -571,7 +571,7 @@ static void PLA(void)
 
 static void PLP(void)
 {
-	CPU.P.reg = S_POP();
+	CPU.P.reg = (S_POP() | EXP_FLAG_MASK) & (uint8_t)(~BRK_FLAG_MASK);
 }
 
 static void ROL(void)
@@ -622,7 +622,7 @@ static void RTI(void)
 	uint16_t addr;
 	uint8_t pch, pcl;
 
-	CPU.P.reg = S_POP();
+	CPU.P.reg = (S_POP() | EXP_FLAG_MASK) & (uint8_t)(~BRK_FLAG_MASK);
 	pcl  = S_POP();
 	pch  = S_POP();
 	addr = (((uint16_t)pch << 8) & 0xff00) | ((uint16_t)pcl & 0x00ff);
@@ -1007,7 +1007,8 @@ static int fetch_operand(enum _addr_modes mode)
 
 	switch (mode) {
 	case mIMP:
-		/* Nothing to do */
+		/* Performs a dummy fetch */
+		sbus_read(CPU.PC);
 		break;
 
 	case mIMM:
@@ -1074,6 +1075,12 @@ static int fetch_operand(enum _addr_modes mode)
 		if ((addr & 0xff00) != bah)
 			cross = 1;
 
+		/* We need to perform a dummy read when page crossing for read
+		 * instructions (differentiated by the add cycles == 0).
+		 */
+		if (cross || op_codes[opcode].add_cycles == 0)
+			sbus_read((uint16_t)((bah & 0xff00) | (addr & 0x00ff)));
+
 		/* Fetches the data */
 		fetched_addr = addr;
 		break;
@@ -1087,6 +1094,10 @@ static int fetch_operand(enum _addr_modes mode)
 		/* Check for page crossing */
 		if ((addr & 0xff00) != bah)
 			cross = 1;
+
+		/* Dummy read as in abs,x */
+		if (cross || op_codes[opcode].add_cycles == 0)
+			sbus_read((uint16_t)((bah & 0xff00) | (addr & 0x00ff)));
 
 		/* Fetches the data */
 		fetched_addr = addr;
@@ -1110,6 +1121,10 @@ static int fetch_operand(enum _addr_modes mode)
 		/* Check for page crossing */
 		if ((addr & 0xff00) != bah)
 			cross = 1;
+
+		/* Dummy read as in abs,x */
+		if (cross || op_codes[opcode].add_cycles == 0)
+			sbus_read((uint16_t)((bah & 0xff00) | (addr & 0x00ff)));
 
 		fetched_addr = addr;
 		break;
@@ -1254,7 +1269,7 @@ void cpu_reset(void)
 	CPU.X = 0;
 	CPU.Y = 0;
 	CPU.S = 0xfd;
-	CPU.P.reg = 0x34;
+	CPU.P.reg = 0x24;
 
 	/* Fetch initial vectors */
 	adl = sbus_read(0xfffc);
