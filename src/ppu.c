@@ -92,6 +92,16 @@ static inline uint8_t get_sprite_height(void)
 }
 
 /**
+ * Check if a sprite whose top is at Y covers the scanline being evaluated
+ * @param [in] y Sprite's Y coordinate
+ * @return 1 if the sprite is in range, 0 otherwise
+ */
+static inline uint8_t sprite_in_range(uint8_t y)
+{
+	return ppu.scanline >= y && ppu.scanline < y + get_sprite_height();
+}
+
+/**
  * Check if PPU rendering is enabled
  * @return uint8_t
  */
@@ -586,6 +596,7 @@ void ppu_clock(void)
 	uint8_t attr, bpal, spal, p[2], a[2], sp[2];
 	uint8_t sp_lsb, sp_msb, sp_row, sp_prio, draw_sp, is_sp0;
 	int nf;
+	uint8_t m;
 	RGB_t bg_pixel, sp_pixel, draw_pixel;
 	palette_t *sys_pal = get_palette();
 
@@ -720,29 +731,37 @@ void ppu_clock(void)
 				ppu.OAM_aux.mem[i] = 0xff;
 			ppu.sprite_cnt = 0;
 			ppu.draw_sp0 = 0;
-			for (i = 0; i < TOTAL_SPRITES && ppu.sprite_cnt <= 8; i++) {
+			for (i = 0; i < TOTAL_SPRITES && ppu.sprite_cnt < 8; i++) {
 				/* Check Y coordinate. Sprite should fit in the screen.
 				 * Y == 0 is a valid position, so it should not be skipped.
 				 * Otherwise sprite 0 placed at the top of the screen
 				 * won't trigger a sprite 0 hit.
 				 */
-				if ((ppu.scanline >= ppu.OAM.sprites[i].Y) &&
-					(ppu.scanline <
-					 (ppu.OAM.sprites[i].Y + get_sprite_height()))) {
-					if (ppu.sprite_cnt < 8) {
-						/* Copy sprite to secondary OAM */
-						ppu.OAM_aux.sprites[ppu.sprite_cnt] =
-							ppu.OAM.sprites[i];
-						ppu.sprite_cnt++;
-						/* Is this the sprite zero? If so, it might have sprite
-						 * collision */
-						if (i == 0)
-							ppu.draw_sp0 = 1;
-					} else if (ppu.sprite_cnt++ == 8) {
-						if (is_rendering())
-							ppu.PPUSTATUS.reg.sprite_overflow = 1;
-					}
+				if (sprite_in_range(ppu.OAM.sprites[i].Y)) {
+					/* Copy sprite to secondary OAM */
+					ppu.OAM_aux.sprites[ppu.sprite_cnt] = ppu.OAM.sprites[i];
+					ppu.sprite_cnt++;
+					/* Is this the sprite zero? If so, it might have sprite
+					 * collision */
+					if (i == 0)
+						ppu.draw_sp0 = 1;
 				}
+			}
+
+			/* Sprite overflow, hardware bug included: once 8 sprites are
+			 * found, the PPU keeps looking for a 9th, but each sprite that
+			 * is not in range advances both the sprite index n and the byte
+			 * index m. It therefore takes the tile, attribute or X byte of
+			 * later sprites as their Y coordinate, giving both false
+			 * positives and false negatives.
+			 */
+			for (m = 0; i < TOTAL_SPRITES; i++) {
+				if (sprite_in_range(ppu.OAM.mem[i * 4 + m])) {
+					if (is_rendering())
+						ppu.PPUSTATUS.reg.sprite_overflow = 1;
+					break;
+				}
+				m = (m + 1) & 0x3;
 			}
 		}
 
