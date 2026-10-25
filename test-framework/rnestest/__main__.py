@@ -183,6 +183,7 @@ def read_rom_list(path: str, roms_dir: str) -> list:
         roms/external/nestest/nestest.nes | test=nestest frames=120 input=none
     """
     entries = []
+    seen = {}
     with open(path, "r", encoding="utf-8") as fh:
         for lineno, raw in enumerate(fh, 1):
             line = raw.strip()
@@ -195,8 +196,15 @@ def read_rom_list(path: str, roms_dir: str) -> list:
             except ValueError as exc:
                 raise ValueError(f"{path}:{lineno}: {exc}") from exc
             resolved = rom if os.path.isabs(rom) else os.path.join(roms_dir, rom)
-            entries.append((os.path.normpath(resolved), default_key(rom),
-                            overrides))
+            key = default_key(rom)
+            # The key names the ROM in the baseline. Two ROMs sharing one
+            # would overwrite each other's verdict without a word.
+            if key in seen:
+                raise ValueError(f"{path}:{lineno}: {rom!r} has the same "
+                                 f"baseline key {key!r} as line {seen[key]}; "
+                                 "rename one of them")
+            seen[key] = lineno
+            entries.append((os.path.normpath(resolved), key, overrides))
     return entries
 
 

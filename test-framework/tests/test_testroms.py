@@ -182,6 +182,13 @@ class TestReadRomList(unittest.TestCase):
         self.assertEqual(key, "Some Game (USA).nes")
         self.assertEqual(opts, {"frames": 90})
 
+    def test_two_roms_with_one_key_are_an_error(self):
+        # Keys are basenames, so the same filename in two suites would share
+        # one baseline entry.
+        with self.assertRaises(ValueError) as ctx:
+            self.read("a/2.Details.nes\nb/2.Details.nes\n")
+        self.assertIn(":2:", str(ctx.exception))
+
     def test_bad_option_names_the_line(self):
         with self.assertRaises(ValueError) as ctx:
             self.read("a.nes\nb.nes | bogus=1\n")
