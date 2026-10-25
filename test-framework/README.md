@@ -162,12 +162,13 @@ animates → **PASS**. A genuinely hung game ignores the input and stays static 
 ## Test ROMs (blargg + nestest)
 
 A *game* can only be judged by how it behaves; a *test ROM* states its own
-result. The suite understands two conventions, selected with `--test-mode`:
+result. The suite understands three conventions, selected with `--test-mode`:
 
 | Mode | ROMs | How the result is read |
 |------|------|------------------------|
 | `off` (default) | games | not used — screen/CPU heuristics only |
 | `auto` | blargg's suites | the ROM writes `$DE $B0 $61` to `$6001-$6003`, a status byte to `$6000` (`$80` running, `$81` wants a reset, otherwise the result code, `0` = passed) and an ASCII summary at `$6004` |
+| `blargg2005` | blargg's 2005-era suites (`sprite_hit_tests`, `vbl_nmi_timing`, `blargg_apu_2005.07.30`, ...) | a zero-page result byte holds the number of the test running, then `1` if all passed; the run is over once the CPU parks in a `jmp *`. The byte is at `$F8` in the October 2005 runtime and at `$F0` in the July/September one -- pass `result-addr=0xf0` for those |
 | `nestest` | nestest | entered at `$C000` instead of its reset vector, it runs every test unattended and leaves the result in zero page at `$02`/`$03`, both `0` when all passed |
 
 A ROM's own verdict wins outright — the screen heuristics never see it. They
@@ -213,7 +214,8 @@ roms/external/nestest/nestest.nes | test=nestest frames=120 input=none
 ```
 
 `test=`, `frames=`, `warmup=`, `interval=`, `timeout=` and `ram-fill=` map to
-the command-line options of the same name; `input=none` turns the menu masher
+the command-line options of the same name, and `result-addr=` to the harness's
+`--result-addr`; `input=none` turns the menu masher
 off and `input=start,select` sets the buttons. An unknown option is an error
 rather than a silent default — a ROM run under flags nobody asked for would
 have the resulting verdict recorded as its baseline.
