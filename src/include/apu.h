@@ -83,6 +83,8 @@ struct _apu_frm_seq {
 	uint8_t irq_inhibit;
 	/** IRQ internal flag */
 	uint8_t irq_flag;
+	/** Last value written to $4017, rewritten on reset */
+	uint8_t last_write;
 	/** APU cycles */
 	uint32_t cycles;
 };
@@ -417,6 +419,7 @@ struct _apu_t {
 int apu_init(void);
 int apu_destroy(void);
 void apu_reset(void);
+void apu_soft_reset(void);
 uint8_t apu_reg_read(uint16_t reg);
 void apu_reg_write(uint16_t reg, uint8_t value);
 void apu_clock(void);
