@@ -904,6 +904,44 @@ void apu_reset(void)
 }
 
 /**
+ * Soft reset: what the APU does when the console's reset button is pressed.
+ *
+ * Unlike apu_reset() (power-on), a reset leaves most of the APU alone:
+ * - $4015 is cleared, silencing every channel;
+ * - $4017 is rewritten with the last value written to it, so the frame
+ *   counter keeps its mode and restarts, and the frame IRQ flag is cleared;
+ * - the pulse and noise length counters are zeroed and un-halted, while the
+ *   triangle is left as it was.
+ *
+ * https://www.nesdev.org/wiki/CPU_power_up_state
+ * Verified by blargg's apu_reset tests (4015_cleared, 4017_written,
+ * irq_flag_cleared, len_ctrs_enabled).
+ */
+void apu_soft_reset(void)
+{
+	int ch;
+
+	for (ch = 0; ch < 2; ch++) {
+		apu.PWM[ch].lc.counter = 0;
+		apu.PWM[ch].lc.halt = 0;
+		apu.PWM[ch].lc.enable = 0;
+	}
+	apu.noise.lc.counter = 0;
+	apu.noise.lc.halt = 0;
+	apu.noise.lc.enable = 0;
+	/* The triangle keeps its length counter; it is only disabled */
+	apu.triangle.lc.enable = 0;
+
+	apu.status.reg.raw = 0;
+	apu.dmc.dma.bytes_remaining = 0;
+	apu.dmc.irq_flag = 0;
+
+	apu.frm_seq.irq_flag = 0;
+	cpu_clear_irq();
+	apu_reg_write(REG_FRM_SEQ, apu.frm_seq.last_write);
+}
+
+/**
  * Read one byte (8 bits) from the specified register
  * @param [in] reg Register address
  * @return Register value
@@ -1045,6 +1083,7 @@ void apu_reg_write(uint16_t reg, uint8_t value)
 		break;
 
 	case REG_FRM_SEQ:
+		apu.frm_seq.last_write = value;
 		if ((value & 0x80) == 0)
 			apu.frm_seq.mode = 0;
 		else
