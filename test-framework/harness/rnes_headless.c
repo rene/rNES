@@ -789,7 +789,7 @@ int main(int argc, char *argv[])
 				if (--reset_pending == 0) {
 					cpu_reset();
 					ppu_reset();
-					apu_reset();
+					apu_soft_reset();
 				}
 			} else if (blargg_signature_present()) {
 				uint8_t st = sbus_read(BLARGG_STATUS);
